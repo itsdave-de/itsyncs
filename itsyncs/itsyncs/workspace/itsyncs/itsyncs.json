@@ -1,0 +1,124 @@
+{
+ "app": "itsyncs",
+ "charts": [],
+ "content": "[{\"id\":\"itsync_header_1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Contact Sync</b></span>\",\"col\":12}},{\"id\":\"itsync_card_sync\",\"type\":\"card\",\"data\":{\"card_name\":\"Sync Configuration\",\"col\":4}},{\"id\":\"itsync_card_monitoring\",\"type\":\"card\",\"data\":{\"card_name\":\"Monitoring\",\"col\":4}},{\"id\":\"itsync_card_setup\",\"type\":\"card\",\"data\":{\"card_name\":\"Setup\",\"col\":4}},{\"id\":\"itsync_card_backup\",\"type\":\"card\",\"data\":{\"card_name\":\"Backup\",\"col\":4}}]",
+ "creation": "2026-03-18 14:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "itsyncs",
+ "idx": 0,
+ "is_hidden": 0,
+ "label": "itsyncs",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Sync Configuration",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "ITSync Pair",
+   "link_count": 0,
+   "link_to": "ITSync Pair",
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "ITSync Connector",
+   "link_count": 0,
+   "link_to": "ITSync Connector",
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Monitoring",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "ITSync Log",
+   "link_count": 0,
+   "link_to": "ITSync Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "ITSync Mapping",
+   "link_count": 0,
+   "link_to": "ITSync Mapping",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Backup",
+   "link_count": 1,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "ITSync Backup",
+   "link_count": 0,
+   "link_to": "ITSync Backup",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Setup",
+   "link_count": 1,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "ITSync Tenant",
+   "link_count": 0,
+   "link_to": "ITSync Tenant",
+   "link_type": "DocType",
+   "onboard": 1,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-03-18 14:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "itsyncs",
+ "name": "itsyncs",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [],
+ "sequence_id": 1.0,
+ "shortcuts": [],
+ "title": "itsyncs",
+ "type": "Workspace"
+}

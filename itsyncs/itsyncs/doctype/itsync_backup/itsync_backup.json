@@ -1,0 +1,122 @@
+{
+ "actions": [],
+ "autoname": "format:BKP-{connector}-{####}",
+ "creation": "2026-03-18 16:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "connector",
+  "status",
+  "column_break_main",
+  "contact_count",
+  "file_size",
+  "section_break_result",
+  "backup_file",
+  "column_break_result",
+  "started_at",
+  "completed_at",
+  "section_break_details",
+  "error_details"
+ ],
+ "fields": [
+  {
+   "fieldname": "connector",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Connector",
+   "options": "ITSync Connector",
+   "reqd": 1
+  },
+  {
+   "default": "Pending",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Pending\nRunning\nSuccess\nFailed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "contact_count",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Contacts",
+   "read_only": 1
+  },
+  {
+   "fieldname": "file_size",
+   "fieldtype": "Data",
+   "label": "File Size",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_result",
+   "fieldtype": "Section Break",
+   "label": "Result"
+  },
+  {
+   "fieldname": "backup_file",
+   "fieldtype": "Attach",
+   "label": "Backup File",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_result",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_details",
+   "fieldtype": "Section Break",
+   "label": "Error Details"
+  },
+  {
+   "fieldname": "error_details",
+   "fieldtype": "Long Text",
+   "label": "Error Details",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-03-18 16:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "itsyncs",
+ "name": "ITSync Backup",
+ "naming_rule": "Expression (Jinja)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

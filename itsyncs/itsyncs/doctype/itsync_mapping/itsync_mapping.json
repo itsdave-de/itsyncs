@@ -1,0 +1,100 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-03-18 14:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "sync_pair",
+  "source_id",
+  "target_id",
+  "column_break_info",
+  "source_email",
+  "display_name",
+  "column_break_state",
+  "field_hash",
+  "status",
+  "last_synced"
+ ],
+ "fields": [
+  {
+   "fieldname": "sync_pair",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Sync Pair",
+   "options": "ITSync Pair",
+   "reqd": 1
+  },
+  {
+   "fieldname": "source_id",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Source ID",
+   "reqd": 1
+  },
+  {
+   "fieldname": "target_id",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Target ID"
+  },
+  {
+   "fieldname": "column_break_info",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "source_email",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Source Email"
+  },
+  {
+   "fieldname": "display_name",
+   "fieldtype": "Data",
+   "label": "Display Name"
+  },
+  {
+   "fieldname": "column_break_state",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "field_hash",
+   "fieldtype": "Data",
+   "label": "Field Hash"
+  },
+  {
+   "default": "Synced",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Synced\nPending\nError\nOrphaned"
+  },
+  {
+   "fieldname": "last_synced",
+   "fieldtype": "Datetime",
+   "label": "Last Synced"
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-03-18 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "itsyncs",
+ "name": "ITSync Mapping",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

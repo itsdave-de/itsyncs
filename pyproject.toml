@@ -9,6 +9,9 @@ readme = "README.md"
 dynamic = ["version"]
 dependencies = [
     # "frappe~=16.0.0" # Installed and managed by bench.
+    "msgraph-sdk>=1.0.0",
+    "azure-identity>=1.15.0",
+    "thefuzz[speedup]>=0.22.0",
 ]
 
 [build-system]

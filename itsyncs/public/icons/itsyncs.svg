@@ -1,0 +1,13 @@
+<svg id="itsyncs-symbols" aria-hidden="true" style="display: none;" xmlns="http://www.w3.org/2000/svg">
+	<symbol viewBox="0 0 54 54" xmlns="http://www.w3.org/2000/svg" id="icon-itsyncs">
+		<path d="M38.5714 0H15.4286C6.90761 0 0 6.90761 0 15.4286V38.5714C0 47.0924 6.90761 54 15.4286 54H38.5714C47.0924 54 54 47.0924 54 38.5714V15.4286C54 6.90761 47.0924 0 38.5714 0Z" fill="#3B82F6" fill-opacity="0.1"/>
+		<path d="M34.5 17.5C34.5 17.5 31.5 14.5 27 14.5C22.5 14.5 19.5 17.5 19.5 17.5" stroke="#1E40AF" stroke-width="2.5" stroke-linecap="round"/>
+		<path d="M19.5 36.5C19.5 36.5 22.5 39.5 27 39.5C31.5 39.5 34.5 36.5 34.5 36.5" stroke="#1E40AF" stroke-width="2.5" stroke-linecap="round"/>
+		<path d="M37 19L40 17L37 15" stroke="#1E40AF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+		<path d="M17 35L14 37L17 39" stroke="#1E40AF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+		<circle cx="21" cy="24" r="3" stroke="#1E40AF" stroke-width="2"/>
+		<path d="M15 32C15 29.5 17.5 28 21 28C24.5 28 27 29.5 27 32" stroke="#1E40AF" stroke-width="2" stroke-linecap="round"/>
+		<circle cx="33" cy="24" r="3" stroke="#1E40AF" stroke-width="2"/>
+		<path d="M27 32C27 29.5 29.5 28 33 28C36.5 28 39 29.5 39 32" stroke="#1E40AF" stroke-width="2" stroke-linecap="round"/>
+	</symbol>
+</svg>

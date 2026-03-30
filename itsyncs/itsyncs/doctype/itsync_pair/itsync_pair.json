@@ -1,0 +1,218 @@
+{
+ "actions": [],
+ "autoname": "field:title",
+ "creation": "2026-03-18 14:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "source",
+  "target",
+  "column_break_main",
+  "status",
+  "last_run",
+  "last_run_log",
+  "section_break_schedule",
+  "schedule",
+  "enabled",
+  "column_break_schedule",
+  "initial_sync_complete",
+  "section_break_behavior",
+  "on_delete",
+  "column_break_behavior",
+  "matching_strategy",
+  "fuzzy_threshold",
+  "section_break_preview",
+  "preview_source_count",
+  "preview_target_count",
+  "column_break_preview",
+  "preview_to_create",
+  "preview_matched",
+  "column_break_preview2",
+  "preview_generated_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Source",
+   "options": "ITSync Connector",
+   "reqd": 1
+  },
+  {
+   "fieldname": "target",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Target",
+   "options": "ITSync Connector",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Draft\nReady\nRunning\nIdle\nError",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_run",
+   "fieldtype": "Datetime",
+   "label": "Last Run",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_run_log",
+   "fieldtype": "Link",
+   "label": "Last Run Log",
+   "options": "ITSync Log",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_schedule",
+   "fieldtype": "Section Break",
+   "label": "Schedule"
+  },
+  {
+   "default": "Every 30 Minutes",
+   "fieldname": "schedule",
+   "fieldtype": "Select",
+   "label": "Schedule",
+   "options": "Every 15 Minutes\nEvery 30 Minutes\nHourly\nEvery 2 Hours\nEvery 6 Hours\nDaily"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.initial_sync_complete",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Auto Sync Enabled"
+  },
+  {
+   "fieldname": "column_break_schedule",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "initial_sync_complete",
+   "fieldtype": "Check",
+   "label": "Initial Sync Complete",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_behavior",
+   "fieldtype": "Section Break",
+   "label": "Sync Behavior"
+  },
+  {
+   "default": "Ignore",
+   "fieldname": "on_delete",
+   "fieldtype": "Select",
+   "label": "On Source Delete",
+   "options": "Ignore\nDelete"
+  },
+  {
+   "fieldname": "column_break_behavior",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Email",
+   "fieldname": "matching_strategy",
+   "fieldtype": "Select",
+   "label": "Matching Strategy",
+   "options": "Email\nEmail + Name\nFuzzy"
+  },
+  {
+   "default": "0.85",
+   "depends_on": "eval:doc.matching_strategy=='Fuzzy'",
+   "fieldname": "fuzzy_threshold",
+   "fieldtype": "Float",
+   "label": "Fuzzy Threshold",
+   "precision": "2"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_break_preview",
+   "fieldtype": "Section Break",
+   "label": "Sync Preview"
+  },
+  {
+   "fieldname": "preview_source_count",
+   "fieldtype": "Int",
+   "label": "Source Contacts",
+   "read_only": 1
+  },
+  {
+   "fieldname": "preview_target_count",
+   "fieldtype": "Int",
+   "label": "Target Contacts",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_preview",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "preview_to_create",
+   "fieldtype": "Int",
+   "label": "To Create",
+   "read_only": 1
+  },
+  {
+   "fieldname": "preview_matched",
+   "fieldtype": "Int",
+   "label": "Already Matched",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_preview2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "preview_generated_at",
+   "fieldtype": "Datetime",
+   "label": "Preview Generated At",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-03-18 14:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "itsyncs",
+ "name": "ITSync Pair",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 1
+}
