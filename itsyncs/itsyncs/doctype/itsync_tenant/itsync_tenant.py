@@ -62,7 +62,7 @@ class ITSyncTenant(Document):
 		except Exception as e:
 			results.append(("Mailboxes", "orange", f"Could not list mailboxes: {e!s}"))
 
-		# 3. Test Exchange Online (InvokeCommand API)
+		# 3. Test Exchange Online (InvokeCommand API) — optional, only for GAL write access
 		try:
 			from itsyncs.graph.exchange import get_exchange_token, _invoke_command
 
@@ -72,14 +72,10 @@ class ITSyncTenant(Document):
 			results.append(("Exchange Online", "green", f"Connected — Mail Contacts {contact_count}"))
 		except Exception as e:
 			err = str(e)
-			if "401" in err or "403" in err or "Unauthorized" in err:
-				results.append(("Exchange Online", "red",
-					"Auth failed — check: Enterprise App 'Office 365 Exchange Online', "
-					"Exchange.ManageAsApp permission, Exchange Administrator role"))
-			else:
-				results.append(("Exchange Online", "red", f"Failed: {err[:200]}"))
+			results.append(("Exchange Online", "orange",
+				f"Not available (only needed for GAL write access): {err[:150]}"))
 
-		# Set connection status
+		# Set connection status — only Graph API failures are critical
 		has_error = any(color == "red" for _, color, _ in results)
 		self.connection_status = "Failed" if has_error else "Connected"
 		self.last_validated = frappe.utils.now_datetime()
