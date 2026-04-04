@@ -60,16 +60,17 @@ def generate_preview(pair_name: str):
 		else:
 			to_create += 1
 
-	pair.db_set("preview_source_count", len(source_contacts))
-	pair.db_set("preview_target_count", len(target_contacts))
-	pair.db_set("preview_to_create", to_create)
-	pair.db_set("preview_matched", matched)
-	pair.db_set("preview_generated_at", frappe.utils.now_datetime())
+	frappe.db.set_value("ITSync Pair", pair_name, {
+		"preview_source_count": len(source_contacts),
+		"preview_target_count": len(target_contacts),
+		"preview_to_create": to_create,
+		"preview_matched": matched,
+		"preview_generated_at": frappe.utils.now_datetime(),
+	}, update_modified=False)
 
 	frappe.publish_realtime(
 		"itsync_preview_complete",
 		{"pair": pair_name, "source": len(source_contacts), "target": len(target_contacts), "to_create": to_create, "matched": matched},
-		after_commit=True,
 	)
 
 
@@ -101,40 +102,44 @@ def run_sync(pair_name: str, sync_type: str = "Incremental"):
 				pair, source_conn, target_conn, source_client, target_client,
 				target_tenant, counts, error_details
 			)
-			pair.db_set("initial_sync_complete", 1)
-			pair.db_set("status", "Idle")
+			pair_update = {"initial_sync_complete": 1, "status": "Idle"}
 		else:
 			_run_incremental_sync(
 				pair, source_conn, target_conn, source_client, target_client,
 				target_tenant, counts, error_details
 			)
-			pair.db_set("status", "Idle")
+			pair_update = {"status": "Idle"}
 
 		log_status = "Success" if counts["errors"] == 0 else "Partial"
 	except Exception as e:
 		log_status = "Failed"
 		error_details.append({"error": str(e), "type": "fatal"})
-		pair.db_set("status", "Error")
+		pair_update = {"status": "Error"}
 		frappe.log_error(f"ITSync Error for {pair_name}", str(e))
 	finally:
-		log.db_set("status", log_status)
-		log.db_set("completed_at", frappe.utils.now_datetime())
-		log.db_set("created_count", counts["created"])
-		log.db_set("updated_count", counts["updated"])
-		log.db_set("deleted_count", counts["deleted"])
-		log.db_set("skipped_count", counts["skipped"])
-		log.db_set("error_count", counts["errors"])
+		# Batch-update log to avoid multiple notify_update calls
+		log_values = {
+			"status": log_status,
+			"completed_at": frappe.utils.now_datetime(),
+			"created_count": counts["created"],
+			"updated_count": counts["updated"],
+			"deleted_count": counts["deleted"],
+			"skipped_count": counts["skipped"],
+			"error_count": counts["errors"],
+		}
 		if error_details:
-			log.db_set("details", json.dumps(error_details, ensure_ascii=False, indent=2))
+			log_values["details"] = json.dumps(error_details, ensure_ascii=False, indent=2)
+		frappe.db.set_value("ITSync Log", log.name, log_values, update_modified=False)
 
-		pair.db_set("last_run", frappe.utils.now_datetime())
-		pair.db_set("last_run_log", log.name)
+		# Batch-update pair
+		pair_update["last_run"] = frappe.utils.now_datetime()
+		pair_update["last_run_log"] = log.name
+		frappe.db.set_value("ITSync Pair", pair_name, pair_update, update_modified=False)
 		frappe.db.commit()
 
 		frappe.publish_realtime(
 			"itsync_sync_complete",
 			{"pair": pair_name, "status": log_status, "log": log.name, **counts},
-			after_commit=True,
 		)
 
 
