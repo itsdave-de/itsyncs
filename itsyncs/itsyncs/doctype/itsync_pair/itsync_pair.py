@@ -45,6 +45,7 @@ class ITSyncPair(Document):
 			queue="default",
 			timeout=600,
 			deduplicate=True,
+			job_id=f"itsync_preview_{self.name}",
 		)
 		frappe.msgprint("Preview generation started. This may take a moment...", alert=True)
 
@@ -64,6 +65,7 @@ class ITSyncPair(Document):
 			queue="long",
 			timeout=3600,
 			deduplicate=True,
+			job_id=f"itsync_initial_{self.name}",
 		)
 		frappe.msgprint("Initial sync started. Check the sync log for progress.", alert=True)
 
@@ -83,5 +85,6 @@ class ITSyncPair(Document):
 			queue="default",
 			timeout=1800,
 			deduplicate=True,
+			job_id=f"itsync_manual_{self.name}",
 		)
 		frappe.msgprint("Manual sync started.", alert=True)
