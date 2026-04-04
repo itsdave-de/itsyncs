@@ -62,29 +62,33 @@ frappe.ui.form.on("ITSync Pair", {
 			);
 		}
 
-		// Realtime updates — unbind first to prevent duplicate handlers on refresh
+		// Realtime updates — unbind first, then use dedup flag to ignore duplicates
 		frappe.realtime.off("itsync_preview_complete");
 		frappe.realtime.on("itsync_preview_complete", (data) => {
-			if (data.pair === frm.doc.name) {
-				frm.reload_doc();
-				frappe.show_alert({
-					message: __("Preview complete: {0} to create, {1} already matched", [data.to_create, data.matched]),
-					indicator: "green",
-				});
-			}
+			if (data.pair !== frm.doc.name) return;
+			if (frm._preview_notified) return;
+			frm._preview_notified = true;
+			setTimeout(() => { frm._preview_notified = false; }, 5000);
+			frm.reload_doc();
+			frappe.show_alert({
+				message: __("Preview complete: {0} to create, {1} already matched", [data.to_create, data.matched]),
+				indicator: "green",
+			});
 		});
 
 		frappe.realtime.off("itsync_sync_complete");
 		frappe.realtime.on("itsync_sync_complete", (data) => {
-			if (data.pair === frm.doc.name) {
-				frm.reload_doc();
-				let indicator = data.status === "Success" ? "green" : data.status === "Partial" ? "orange" : "red";
-				frappe.show_alert({
-					message: __("Sync {0}: {1} created, {2} updated, {3} deleted, {4} errors",
-						[data.status, data.created, data.updated, data.deleted, data.errors]),
-					indicator: indicator,
-				});
-			}
+			if (data.pair !== frm.doc.name) return;
+			if (frm._sync_notified) return;
+			frm._sync_notified = true;
+			setTimeout(() => { frm._sync_notified = false; }, 5000);
+			frm.reload_doc();
+			let indicator = data.status === "Success" ? "green" : data.status === "Partial" ? "orange" : "red";
+			frappe.show_alert({
+				message: __("Sync {0}: {1} created, {2} updated, {3} deleted, {4} errors",
+					[data.status, data.created, data.updated, data.deleted, data.errors]),
+				indicator: indicator,
+			});
 		});
 	},
 });
