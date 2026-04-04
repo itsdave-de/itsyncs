@@ -3,9 +3,7 @@ frappe.ui.form.on("ITSync Pair", {
 		// Preview button - available when status is Ready and no initial sync yet
 		if (!frm.is_new() && !frm.doc.initial_sync_complete) {
 			frm.add_custom_button(__("Generate Preview"), () => {
-				frm.call("generate_preview").then(() => {
-					frm.reload_doc();
-				});
+				frm.call("generate_preview");
 			}, __("Actions"));
 		}
 
@@ -15,9 +13,7 @@ frappe.ui.form.on("ITSync Pair", {
 				frappe.confirm(
 					__("This will sync {0} contacts from source to target. Continue?", [frm.doc.preview_to_create]),
 					() => {
-						frm.call("run_initial_sync").then(() => {
-							frm.reload_doc();
-						});
+						frm.call("run_initial_sync");
 					}
 				);
 			}, __("Actions"));
@@ -26,9 +22,7 @@ frappe.ui.form.on("ITSync Pair", {
 		// Manual Sync button - available after initial sync
 		if (frm.doc.initial_sync_complete && frm.doc.status !== "Running") {
 			frm.add_custom_button(__("Sync Now"), () => {
-				frm.call("run_manual_sync").then(() => {
-					frm.reload_doc();
-				});
+				frm.call("run_manual_sync");
 			}).addClass("btn-primary-dark");
 		}
 
