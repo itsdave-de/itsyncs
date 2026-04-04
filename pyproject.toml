@@ -12,6 +12,7 @@ dependencies = [
     "msgraph-sdk>=1.0.0",
     "azure-identity>=1.15.0",
     "thefuzz[speedup]>=0.22.0",
+    "pymssql>=2.2.0",
 ]
 
 [build-system]

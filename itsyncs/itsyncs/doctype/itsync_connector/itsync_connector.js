@@ -19,6 +19,16 @@ frappe.ui.form.on("ITSync Connector", {
 			);
 		}
 
+		// Info banner for Sage SQL connectors
+		if (frm.doc.connector_type === "Sage SQL") {
+			frm.set_intro(
+				__("Sage SQL connectors are <b>read-only sources</b>. "
+				+ "Contacts are fetched from the Sage Office Line database and synced to an Exchange target. "
+				+ "Change detection uses SQL Server rowversion for efficient incremental syncs."),
+				"blue"
+			);
+		}
+
 		// Info for Mailbox connectors
 		if ((frm.doc.connector_type === "Mailbox" || frm.doc.connector_type === "Shared Mailbox") && !frm.doc.contact_folder) {
 			frm.set_intro(

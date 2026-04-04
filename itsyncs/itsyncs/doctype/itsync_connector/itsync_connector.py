@@ -4,7 +4,11 @@ from frappe.model.document import Document
 
 class ITSyncConnector(Document):
 	def validate(self):
-		if self.connector_type == "GAL":
+		if self.connector_type == "Sage SQL":
+			self.is_writable = 0
+			self.email_address = None
+			self.tenant = None
+		elif self.connector_type == "GAL":
 			self.is_writable = 1
 			self.email_address = None
 		else:
@@ -12,8 +16,8 @@ class ITSyncConnector(Document):
 			if not self.email_address:
 				frappe.throw("Email Address is required for Mailbox and Shared Mailbox connectors.")
 
-		# Detect folder change and reset sync state
-		if not self.is_new():
+		# Detect folder change and reset sync state (mailbox types only)
+		if not self.is_new() and self.connector_type in ("Mailbox", "Shared Mailbox"):
 			old_folder = frappe.db.get_value("ITSync Connector", self.name, "contact_folder") or ""
 			new_folder = self.contact_folder or ""
 			if old_folder != new_folder:
@@ -23,10 +27,8 @@ class ITSyncConnector(Document):
 
 	def _on_folder_changed(self):
 		"""Reset sync state when contact folder changes."""
-		# Clear delta token (no longer valid for new folder)
 		self.delta_token = None
 
-		# Reset all pairs that use this connector (as source or target)
 		source_pairs = frappe.get_all("ITSync Pair", filters={"source": self.name}, fields=["name", "initial_sync_complete"])
 		target_pairs = frappe.get_all("ITSync Pair", filters={"target": self.name}, fields=["name", "initial_sync_complete"])
 		seen = set()
@@ -51,7 +53,11 @@ class ITSyncConnector(Document):
 
 	@frappe.whitelist()
 	def test_connection(self):
-		from itsyncs.graph.client import get_graph_client, run_async
+		if self.connector_type == "Sage SQL":
+			self._test_sage_connection()
+			return
+
+		from itsyncs.graph.client import get_graph_client
 
 		tenant = frappe.get_doc("ITSync Tenant", self.tenant)
 		if tenant.connection_status != "Connected":
@@ -75,6 +81,26 @@ class ITSyncConnector(Document):
 		except Exception as e:
 			self.connection_status = "Failed"
 			frappe.throw(f"Connection test failed: {e!s}")
+
+	def _test_sage_connection(self):
+		"""Test SQL Server connectivity and count active contacts."""
+		try:
+			from itsyncs.sage.client import test_sage_connection
+
+			result = test_sage_connection(self)
+			self.contact_count = result["addresses"] + result["contacts"]
+			self.connection_status = "Connected"
+			self.last_validated = frappe.utils.now_datetime()
+			frappe.msgprint(
+				f"Connection successful. Server: {result['server_version'][:60]}. "
+				f"{result['addresses']} active addresses, "
+				f"{result['contacts']} contact persons found.",
+				alert=True,
+				indicator="green",
+			)
+		except Exception as e:
+			self.connection_status = "Failed"
+			frappe.throw(f"SQL Server connection test failed: {e!s}")
 
 	@frappe.whitelist()
 	def fetch_folders(self):

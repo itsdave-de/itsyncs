@@ -5,6 +5,7 @@ from frappe.model.document import Document
 class ITSyncPair(Document):
 	def validate(self):
 		self._validate_target_writable()
+		self._validate_sage_source_only()
 		self._validate_different_connectors()
 		self._validate_enabled()
 		self._update_status()
@@ -13,6 +14,11 @@ class ITSyncPair(Document):
 		target = frappe.get_doc("ITSync Connector", self.target)
 		if not target.is_writable:
 			frappe.throw("Target connector must be writable.")
+
+	def _validate_sage_source_only(self):
+		target = frappe.get_doc("ITSync Connector", self.target)
+		if target.connector_type == "Sage SQL":
+			frappe.throw("Sage SQL connectors can only be used as a sync source, not as a target.")
 
 	def _validate_different_connectors(self):
 		if self.source == self.target:

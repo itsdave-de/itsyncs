@@ -20,17 +20,30 @@ from itsyncs.graph.gal import fetch_all_gal_entries, fetch_gal_delta
 from itsyncs.sync.matching import compute_field_hash, find_match, get_primary_email
 
 
+def _get_client_for_connector(connector):
+	"""Create the appropriate API client for a connector, or None for Sage SQL."""
+	if connector.connector_type == "Sage SQL":
+		return None
+	tenant = frappe.get_doc("ITSync Tenant", connector.tenant)
+	return get_graph_client(tenant)
+
+
+def _get_tenant_for_connector(connector):
+	"""Get the tenant doc for a connector, or None for Sage SQL."""
+	if connector.connector_type == "Sage SQL":
+		return None
+	return frappe.get_doc("ITSync Tenant", connector.tenant)
+
+
 def generate_preview(pair_name: str):
 	"""Generate a sync preview for the given pair. Runs as a background job."""
 	pair = frappe.get_doc("ITSync Pair", pair_name)
 	source_conn = frappe.get_doc("ITSync Connector", pair.source)
 	target_conn = frappe.get_doc("ITSync Connector", pair.target)
 
-	source_tenant = frappe.get_doc("ITSync Tenant", source_conn.tenant)
-	target_tenant = frappe.get_doc("ITSync Tenant", target_conn.tenant)
-
-	source_client = get_graph_client(source_tenant)
-	target_client = get_graph_client(target_tenant)
+	source_client = _get_client_for_connector(source_conn)
+	target_client = _get_client_for_connector(target_conn)
+	target_tenant = _get_tenant_for_connector(target_conn)
 
 	# Fetch source contacts
 	source_contacts = _fetch_source_contacts(source_client, source_conn)
@@ -80,10 +93,9 @@ def run_sync(pair_name: str, sync_type: str = "Incremental"):
 	error_details = []
 
 	try:
-		source_tenant = frappe.get_doc("ITSync Tenant", source_conn.tenant)
-		target_tenant = frappe.get_doc("ITSync Tenant", target_conn.tenant)
-		source_client = get_graph_client(source_tenant)
-		target_client = get_graph_client(target_tenant)
+		source_client = _get_client_for_connector(source_conn)
+		target_client = _get_client_for_connector(target_conn)
+		target_tenant = _get_tenant_for_connector(target_conn)
 
 		if sync_type == "Initial":
 			_run_initial_sync(
@@ -164,16 +176,23 @@ def _run_initial_sync(pair, source_conn, target_conn, source_client, target_clie
 		if (counts["created"] + counts["skipped"] + counts["errors"]) % 50 == 0:
 			frappe.db.commit()
 
-	# Store delta tokens for future incremental syncs (fresh client needed)
-	fresh_source_client = get_graph_client(frappe.get_doc("ITSync Tenant", source_conn.tenant))
-	_store_delta_tokens(source_conn, fresh_source_client)
+	# Store delta tokens for future incremental syncs
+	_store_delta_tokens(source_conn, source_client)
 
 	frappe.db.commit()
 
 
 def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_client, target_tenant, counts, error_details):
 	"""Incremental sync using delta queries."""
-	if source_conn.connector_type == "GAL":
+	if source_conn.connector_type == "Sage SQL":
+		from itsyncs.sage.contacts import fetch_sage_delta
+
+		last_rv = int(source_conn.delta_token or "0")
+		changed, deleted_ids, new_rv = fetch_sage_delta(source_conn, last_rv)
+		if new_rv > last_rv:
+			source_conn.db_set("delta_token", str(new_rv))
+
+	elif source_conn.connector_type == "GAL":
 		delta_data = json.loads(source_conn.delta_token or "{}") if source_conn.delta_token else {}
 		changed, deleted_ids, new_token_users, new_token_org = fetch_gal_delta(
 			source_client,
@@ -282,7 +301,11 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 
 def _fetch_source_contacts(client, source_conn):
 	"""Fetch contacts from a source connector."""
-	if source_conn.connector_type in ("Mailbox", "Shared Mailbox"):
+	if source_conn.connector_type == "Sage SQL":
+		from itsyncs.sage.contacts import fetch_all_sage_contacts
+
+		return fetch_all_sage_contacts(source_conn)
+	elif source_conn.connector_type in ("Mailbox", "Shared Mailbox"):
 		return fetch_all_contacts(client, source_conn.email_address, source_conn.contact_folder or None)
 	elif source_conn.connector_type == "GAL":
 		return fetch_all_gal_entries(client, source_conn.gal_include)
@@ -313,8 +336,13 @@ def _create_mapping(pair_name: str, source_contact: dict, target_id: str):
 
 
 def _store_delta_tokens(source_conn, source_client):
-	"""Initialize delta tokens after a full sync by doing an empty delta query."""
-	if source_conn.connector_type in ("Mailbox", "Shared Mailbox"):
+	"""Initialize delta tokens after a full sync."""
+	if source_conn.connector_type == "Sage SQL":
+		from itsyncs.sage.client import get_max_rowversion
+
+		max_rv = get_max_rowversion(source_conn)
+		source_conn.db_set("delta_token", str(max_rv))
+	elif source_conn.connector_type in ("Mailbox", "Shared Mailbox"):
 		_, _, _, new_token = fetch_contact_delta(
 			source_client, source_conn.email_address, folder_id=source_conn.contact_folder or None
 		)

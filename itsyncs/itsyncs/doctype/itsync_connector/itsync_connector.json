@@ -20,6 +20,16 @@
   "contact_folder_name",
   "section_break_gal",
   "gal_include",
+  "section_break_sage",
+  "sql_host",
+  "sql_port",
+  "column_break_sage",
+  "sql_database",
+  "sql_mandant",
+  "section_break_sage_auth",
+  "sql_username",
+  "column_break_sage_auth",
+  "sql_password",
   "section_break_state",
   "contact_count",
   "column_break_state",
@@ -40,14 +50,14 @@
    "in_list_view": 1,
    "label": "Tenant",
    "options": "ITSync Tenant",
-   "reqd": 1
+   "mandatory_depends_on": "eval:doc.connector_type!='Sage SQL'"
   },
   {
    "fieldname": "connector_type",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Connector Type",
-   "options": "Mailbox\nShared Mailbox\nGAL",
+   "options": "Mailbox\nShared Mailbox\nGAL\nSage SQL",
    "reqd": 1
   },
   {
@@ -127,6 +137,68 @@
    "options": "Users\nOrg Contacts\nBoth"
   },
   {
+   "depends_on": "eval:doc.connector_type=='Sage SQL'",
+   "fieldname": "section_break_sage",
+   "fieldtype": "Section Break",
+   "label": "Sage SQL Configuration"
+  },
+  {
+   "fieldname": "sql_host",
+   "fieldtype": "Data",
+   "label": "SQL Server Host",
+   "description": "Hostname or IP (e.g. 192.168.21.35)",
+   "mandatory_depends_on": "eval:doc.connector_type=='Sage SQL'"
+  },
+  {
+   "fieldname": "sql_port",
+   "fieldtype": "Int",
+   "label": "SQL Server Port",
+   "default": "1433",
+   "description": "Port (e.g. 60765 for named instances)",
+   "mandatory_depends_on": "eval:doc.connector_type=='Sage SQL'"
+  },
+  {
+   "fieldname": "column_break_sage",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sql_database",
+   "fieldtype": "Data",
+   "label": "Database",
+   "default": "OLKFB",
+   "mandatory_depends_on": "eval:doc.connector_type=='Sage SQL'"
+  },
+  {
+   "fieldname": "sql_mandant",
+   "fieldtype": "Int",
+   "label": "Mandant",
+   "default": "1",
+   "description": "Sage Mandant number",
+   "mandatory_depends_on": "eval:doc.connector_type=='Sage SQL'"
+  },
+  {
+   "depends_on": "eval:doc.connector_type=='Sage SQL'",
+   "fieldname": "section_break_sage_auth",
+   "fieldtype": "Section Break",
+   "label": "SQL Authentication"
+  },
+  {
+   "fieldname": "sql_username",
+   "fieldtype": "Data",
+   "label": "SQL Username",
+   "mandatory_depends_on": "eval:doc.connector_type=='Sage SQL'"
+  },
+  {
+   "fieldname": "column_break_sage_auth",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sql_password",
+   "fieldtype": "Password",
+   "label": "SQL Password",
+   "mandatory_depends_on": "eval:doc.connector_type=='Sage SQL'"
+  },
+  {
    "fieldname": "section_break_state",
    "fieldtype": "Section Break",
    "label": "Sync State",
@@ -151,7 +223,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-03-18 14:00:00.000000",
+ "modified": "2026-04-04 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "itsyncs",
  "name": "ITSync Connector",

@@ -15,15 +15,20 @@ def run_backup(backup_name: str):
 	"""Run a contact backup for the given backup document."""
 	backup = frappe.get_doc("ITSync Backup", backup_name)
 	connector = frappe.get_doc("ITSync Connector", backup.connector)
-	tenant = frappe.get_doc("ITSync Tenant", connector.tenant)
 
 	try:
-		client = get_graph_client(tenant)
-
 		# Fetch contacts based on connector type
-		if connector.connector_type in ("Mailbox", "Shared Mailbox"):
+		if connector.connector_type == "Sage SQL":
+			from itsyncs.sage.contacts import fetch_all_sage_contacts
+
+			contacts = fetch_all_sage_contacts(connector)
+		elif connector.connector_type in ("Mailbox", "Shared Mailbox"):
+			tenant = frappe.get_doc("ITSync Tenant", connector.tenant)
+			client = get_graph_client(tenant)
 			contacts = fetch_all_contacts(client, connector.email_address, connector.contact_folder or None)
 		elif connector.connector_type == "GAL":
+			tenant = frappe.get_doc("ITSync Tenant", connector.tenant)
+			client = get_graph_client(tenant)
 			contacts = fetch_all_gal_entries(client, connector.gal_include)
 		else:
 			frappe.throw(f"Unsupported connector type: {connector.connector_type}")
