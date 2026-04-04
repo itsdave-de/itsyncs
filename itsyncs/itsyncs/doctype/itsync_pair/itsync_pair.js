@@ -65,11 +65,20 @@ if (!frappe._itsync_realtime_bound) {
 
 	frappe.realtime.on("itsync_preview_complete", (data) => {
 		if (!cur_frm || cur_frm.doctype !== "ITSync Pair" || data.pair !== cur_frm.doc.name) return;
+		frappe.xcall("frappe.client.get_value", {
+			doctype: "ITSync Pair",
+			filters: data.pair,
+			fieldname: ["preview_source_count", "preview_target_count", "preview_to_create", "preview_matched", "preview_generated_at"],
+		}).then((values) => {
+			if (values) {
+				cur_frm.doc = Object.assign(cur_frm.doc, values);
+				cur_frm.refresh_fields();
+			}
+		});
 		frappe.show_alert({
-			message: __("Preview complete: {0} to create, {1} already matched. Reloading...", [data.to_create, data.matched]),
+			message: __("Preview complete: {0} to create, {1} already matched", [data.to_create, data.matched]),
 			indicator: "green",
 		}, 7);
-		setTimeout(() => cur_frm.reload_doc(), 1000);
 	});
 
 	frappe.realtime.on("itsync_sync_complete", (data) => {
@@ -80,6 +89,17 @@ if (!frappe._itsync_realtime_bound) {
 				[data.status, data.created, data.updated, data.deleted, data.errors]),
 			indicator: indicator,
 		}, 10);
-		setTimeout(() => cur_frm.reload_doc(), 1000);
+		frappe.xcall("frappe.client.get_value", {
+			doctype: "ITSync Pair",
+			filters: data.pair,
+			fieldname: ["status", "last_run", "last_run_log", "initial_sync_complete", "enabled"],
+		}).then((values) => {
+			if (values) {
+				cur_frm.doc = Object.assign(cur_frm.doc, values);
+				cur_frm.dirty(false);
+				cur_frm.refresh_fields();
+				cur_frm.page.set_indicator(values.status === "Idle" ? "green" : "orange");
+			}
+		});
 	});
 }
