@@ -44,6 +44,7 @@ class ITSyncPair(Document):
 			pair_name=self.name,
 			queue="default",
 			timeout=600,
+			deduplicate=True,
 		)
 		frappe.msgprint("Preview generation started. This may take a moment...", alert=True)
 
@@ -62,6 +63,7 @@ class ITSyncPair(Document):
 			sync_type="Initial",
 			queue="long",
 			timeout=3600,
+			deduplicate=True,
 		)
 		frappe.msgprint("Initial sync started. Check the sync log for progress.", alert=True)
 
@@ -80,5 +82,6 @@ class ITSyncPair(Document):
 			sync_type="Manual",
 			queue="default",
 			timeout=1800,
+			deduplicate=True,
 		)
 		frappe.msgprint("Manual sync started.", alert=True)
