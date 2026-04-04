@@ -39,15 +39,15 @@ class ITSyncPair(Document):
 
 	@frappe.whitelist()
 	def generate_preview(self):
-		frappe.enqueue(
-			"itsyncs.sync.engine.generate_preview",
-			pair_name=self.name,
-			queue="default",
-			timeout=600,
-			deduplicate=True,
-			job_id=f"itsync_preview_{self.name}",
+		from itsyncs.sync.engine import generate_preview
+
+		generate_preview(self.name)
+		self.reload()
+		frappe.msgprint(
+			f"Preview complete: {self.preview_to_create} to create, {self.preview_matched} already matched.",
+			alert=True,
+			indicator="green",
 		)
-		frappe.msgprint("Preview generation started. This may take a moment...", alert=True)
 
 	@frappe.whitelist()
 	def run_initial_sync(self):

@@ -66,12 +66,7 @@ def generate_preview(pair_name: str):
 		"preview_to_create": to_create,
 		"preview_matched": matched,
 		"preview_generated_at": frappe.utils.now_datetime(),
-	}, update_modified=False)
-
-	frappe.publish_realtime(
-		"itsync_preview_complete",
-		{"pair": pair_name, "source": len(source_contacts), "target": len(target_contacts), "to_create": to_create, "matched": matched},
-	)
+	})
 
 
 def run_sync(pair_name: str, sync_type: str = "Incremental"):
