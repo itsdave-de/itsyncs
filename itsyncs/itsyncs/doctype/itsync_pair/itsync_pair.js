@@ -62,7 +62,8 @@ frappe.ui.form.on("ITSync Pair", {
 			);
 		}
 
-		// Realtime updates
+		// Realtime updates — unbind first to prevent duplicate handlers on refresh
+		frappe.realtime.off("itsync_preview_complete");
 		frappe.realtime.on("itsync_preview_complete", (data) => {
 			if (data.pair === frm.doc.name) {
 				frm.reload_doc();
@@ -73,6 +74,7 @@ frappe.ui.form.on("ITSync Pair", {
 			}
 		});
 
+		frappe.realtime.off("itsync_sync_complete");
 		frappe.realtime.on("itsync_sync_complete", (data) => {
 			if (data.pair === frm.doc.name) {
 				frm.reload_doc();
