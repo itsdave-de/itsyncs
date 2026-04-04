@@ -65,21 +65,21 @@ if (!frappe._itsync_realtime_bound) {
 
 	frappe.realtime.on("itsync_preview_complete", (data) => {
 		if (!cur_frm || cur_frm.doctype !== "ITSync Pair" || data.pair !== cur_frm.doc.name) return;
-		cur_frm.reload_doc();
 		frappe.show_alert({
-			message: __("Preview complete: {0} to create, {1} already matched", [data.to_create, data.matched]),
+			message: __("Preview complete: {0} to create, {1} already matched. Reloading...", [data.to_create, data.matched]),
 			indicator: "green",
-		});
+		}, 7);
+		setTimeout(() => cur_frm.reload_doc(), 1000);
 	});
 
 	frappe.realtime.on("itsync_sync_complete", (data) => {
 		if (!cur_frm || cur_frm.doctype !== "ITSync Pair" || data.pair !== cur_frm.doc.name) return;
-		cur_frm.reload_doc();
 		let indicator = data.status === "Success" ? "green" : data.status === "Partial" ? "orange" : "red";
 		frappe.show_alert({
 			message: __("Sync {0}: {1} created, {2} updated, {3} deleted, {4} errors",
 				[data.status, data.created, data.updated, data.deleted, data.errors]),
 			indicator: indicator,
-		});
+		}, 10);
+		setTimeout(() => cur_frm.reload_doc(), 1000);
 	});
 }
