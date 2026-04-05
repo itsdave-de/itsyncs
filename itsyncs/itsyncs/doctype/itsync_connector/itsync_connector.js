@@ -8,56 +8,7 @@ frappe.ui.form.on("ITSync Connector", {
 			});
 		}
 
-		// Help section based on connector type
-		if (frm.doc.connector_type === "Mailbox" || frm.doc.connector_type === "Shared Mailbox") {
-			let folder_hint = frm.doc.contact_folder
-				? ""
-				: '<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-color);">'
-				  + 'Using the default contacts folder. Use <b>Settings &rarr; Select Folder</b> to sync from/to a specific subfolder.</div>';
-			frm.set_intro(
-				__('<b>Required Azure AD App Permissions (Application):</b>'
-				+ '<ul style="margin: 6px 0 0 16px; padding: 0;">'
-				+ '<li><b>Contacts.ReadWrite</b> — Read/write contacts in the mailbox</li>'
-				+ '<li><b>User.Read.All</b> — Resolve mailbox addresses</li>'
-				+ '</ul>'
-				+ '<div style="margin-top: 6px; color: var(--text-muted);">'
-				+ 'Admin consent must be granted for these permissions in the Azure Portal '
-				+ '(<i>API permissions &rarr; Grant admin consent</i>).</div>'
-				+ folder_hint),
-				"blue"
-			);
-		}
-
-		if (frm.doc.connector_type === "GAL") {
-			frm.set_intro(
-				__('<b>Required Azure AD App Permissions (Application):</b>'
-				+ '<ul style="margin: 6px 0 0 16px; padding: 0;">'
-				+ '<li><b>Contacts.ReadWrite</b> — Read contacts from Azure AD</li>'
-				+ '<li><b>User.Read.All</b> — Read user directory</li>'
-				+ '<li><b>Exchange.ManageAsApp</b> — Write mail contacts to GAL (target only)</li>'
-				+ '</ul>'
-				+ '<div style="margin-top: 6px;"><b>Additional requirements for GAL write access:</b></div>'
-				+ '<ul style="margin: 4px 0 0 16px; padding: 0;">'
-				+ '<li>Enterprise App <b>Office 365 Exchange Online</b> must be registered in the tenant</li>'
-				+ '<li>The App must have the <b>Exchange Administrator</b> directory role</li>'
-				+ '</ul>'),
-				"blue"
-			);
-		}
-
-		if (frm.doc.connector_type === "Sage SQL") {
-			frm.set_intro(
-				__('<b>Sage SQL — Read-only Source</b>'
-				+ '<ul style="margin: 6px 0 0 16px; padding: 0;">'
-				+ '<li>Connects directly to the Sage Office Line SQL Server database</li>'
-				+ '<li>Requires a SQL Server login with <b>read access</b> to the Sage database (e.g. <code>OLKFB</code>)</li>'
-				+ '<li>Tables used: <code>KHKAdressen</code>, <code>KHKAnsprechpartner</code></li>'
-				+ '<li>Change detection via SQL Server <b>rowversion</b> for efficient incremental syncs</li>'
-				+ '<li>Contact normalization filters junk entries automatically (functional names, invalid data)</li>'
-				+ '</ul>'),
-				"blue"
-			);
-		}
+		_update_intro(frm);
 
 		// Show folder selection button for Mailbox types
 		if (
@@ -143,7 +94,63 @@ frappe.ui.form.on("ITSync Connector", {
 			}, __("Settings"));
 		}
 	},
+
+	connector_type(frm) {
+		_update_intro(frm);
+	},
 });
+
+function _update_intro(frm) {
+	let type = frm.doc.connector_type;
+
+	if (type === "Mailbox" || type === "Shared Mailbox") {
+		let folder_hint = frm.doc.contact_folder
+			? ""
+			: '<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-color);">'
+			  + 'Using the default contacts folder. Use <b>Settings &rarr; Select Folder</b> to sync from/to a specific subfolder.</div>';
+		frm.set_intro(
+			__('<b>Required Azure AD App Permissions (Application):</b>'
+			+ '<ul style="margin: 6px 0 0 16px; padding: 0;">'
+			+ '<li><b>Contacts.ReadWrite</b> — Read/write contacts in the mailbox</li>'
+			+ '<li><b>User.Read.All</b> — Resolve mailbox addresses</li>'
+			+ '</ul>'
+			+ '<div style="margin-top: 6px; color: var(--text-muted);">'
+			+ 'Admin consent must be granted for these permissions in the Azure Portal '
+			+ '(<i>API permissions &rarr; Grant admin consent</i>).</div>'
+			+ folder_hint),
+			"blue"
+		);
+	} else if (type === "GAL") {
+		frm.set_intro(
+			__('<b>Required Azure AD App Permissions (Application):</b>'
+			+ '<ul style="margin: 6px 0 0 16px; padding: 0;">'
+			+ '<li><b>Contacts.ReadWrite</b> — Read contacts from Azure AD</li>'
+			+ '<li><b>User.Read.All</b> — Read user directory</li>'
+			+ '<li><b>Exchange.ManageAsApp</b> — Write mail contacts to GAL (target only)</li>'
+			+ '</ul>'
+			+ '<div style="margin-top: 6px;"><b>Additional requirements for GAL write access:</b></div>'
+			+ '<ul style="margin: 4px 0 0 16px; padding: 0;">'
+			+ '<li>Enterprise App <b>Office 365 Exchange Online</b> must be registered in the tenant</li>'
+			+ '<li>The App must have the <b>Exchange Administrator</b> directory role</li>'
+			+ '</ul>'),
+			"blue"
+		);
+	} else if (type === "Sage SQL") {
+		frm.set_intro(
+			__('<b>Sage SQL — Read-only Source</b>'
+			+ '<ul style="margin: 6px 0 0 16px; padding: 0;">'
+			+ '<li>Connects directly to the Sage Office Line SQL Server database</li>'
+			+ '<li>Requires a SQL Server login with <b>read access</b> to the Sage database (e.g. <code>OLKFB</code>)</li>'
+			+ '<li>Tables used: <code>KHKAdressen</code>, <code>KHKAnsprechpartner</code></li>'
+			+ '<li>Change detection via SQL Server <b>rowversion</b> for efficient incremental syncs</li>'
+			+ '<li>Contact normalization filters junk entries automatically (functional names, invalid data)</li>'
+			+ '</ul>'),
+			"blue"
+		);
+	} else {
+		frm.set_intro("");
+	}
+}
 
 function _build_folder_html(folders, current_id) {
 	let rows = `<div class="folder-option" data-value=""
