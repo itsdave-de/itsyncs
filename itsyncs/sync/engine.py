@@ -130,6 +130,12 @@ def run_sync(pair_name: str, sync_type: str = "Incremental"):
 		pair_update["last_run"] = frappe.utils.now_datetime()
 		pair_update["last_run_log"] = log.name
 		frappe.db.set_value("ITSync Pair", pair_name, pair_update, update_modified=False)
+
+		# Update contact counts on connectors
+		source_mapping_count = frappe.db.count("ITSync Mapping", {"sync_pair": pair_name, "status": "Synced"})
+		frappe.db.set_value("ITSync Connector", source_conn.name, "contact_count", source_mapping_count, update_modified=False)
+		frappe.db.set_value("ITSync Connector", target_conn.name, "contact_count", source_mapping_count, update_modified=False)
+
 		frappe.db.commit()
 
 		frappe.publish_realtime(
