@@ -10,6 +10,10 @@ frappe.ui.form.on("ITSync Connector", {
 
 		// Help section based on connector type
 		if (frm.doc.connector_type === "Mailbox" || frm.doc.connector_type === "Shared Mailbox") {
+			let folder_hint = frm.doc.contact_folder
+				? ""
+				: '<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-color);">'
+				  + 'Using the default contacts folder. Use <b>Settings &rarr; Select Folder</b> to sync from/to a specific subfolder.</div>';
 			frm.set_intro(
 				__('<b>Required Azure AD App Permissions (Application):</b>'
 				+ '<ul style="margin: 6px 0 0 16px; padding: 0;">'
@@ -18,15 +22,10 @@ frappe.ui.form.on("ITSync Connector", {
 				+ '</ul>'
 				+ '<div style="margin-top: 6px; color: var(--text-muted);">'
 				+ 'Admin consent must be granted for these permissions in the Azure Portal '
-				+ '(<i>API permissions → Grant admin consent</i>).</div>'),
+				+ '(<i>API permissions &rarr; Grant admin consent</i>).</div>'
+				+ folder_hint),
 				"blue"
 			);
-			if (!frm.doc.contact_folder) {
-				frm.set_intro(
-					__("Using the default contacts folder. Use <b>Settings &rarr; Select Folder</b> to sync from/to a specific subfolder."),
-					"blue"
-				);
-			}
 		}
 
 		if (frm.doc.connector_type === "GAL") {
