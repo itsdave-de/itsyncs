@@ -84,10 +84,13 @@ class ITSyncTenant(Document):
 		msg_parts = []
 		for label, color, detail in results:
 			indicator = {"green": "🟢", "blue": "🔵", "orange": "🟠", "red": "🔴"}.get(color, "⚪")
-			msg_parts.append(f"<b>{indicator} {label}</b><br>{detail}")
+			msg_parts.append(
+				f'<div style="margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border-color);">'
+				f"<b>{indicator} {label}</b><br>{detail}</div>"
+			)
 
 		frappe.msgprint(
-			"<hr>".join(msg_parts),
+			"".join(msg_parts),
 			title="Connection Test Results",
 			indicator="red" if has_error else "green",
 		)
