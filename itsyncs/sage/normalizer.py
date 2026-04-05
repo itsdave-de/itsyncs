@@ -165,6 +165,13 @@ def _strip(val: Optional[str]) -> str:
 	return (val or "").strip()
 
 
+def _strip_leading_junk(val: str) -> tuple[str, bool]:
+	"""Strip leading non-letter characters (•, ., *, -, _) from names.
+	Returns (cleaned, was_modified)."""
+	cleaned = re.sub(r"^[^a-zA-ZÀ-ÿ]+", "", val).strip()
+	return cleaned, cleaned != val
+
+
 def normalize_phone(raw: Optional[str], field_name: str = "phone") -> tuple[str, list[NormalizationIssue]]:
 	issues: list[NormalizationIssue] = []
 	original = _strip(raw)
@@ -301,6 +308,26 @@ def normalize_name(
 	last = _strip(nachname)
 	dept = _strip(abteilung)
 
+	# Strip leading junk characters (•, ., *, etc.) from names
+	if first:
+		first_clean, modified = _strip_leading_junk(first)
+		if modified:
+			issues.append(NormalizationIssue(
+				IssueSeverity.INFO, "vorname",
+				f"Führende Sonderzeichen entfernt",
+				first, first_clean,
+			))
+			first = first_clean
+	if last:
+		last_clean, modified = _strip_leading_junk(last)
+		if modified:
+			issues.append(NormalizationIssue(
+				IssueSeverity.INFO, "nachname",
+				f"Führende Sonderzeichen entfernt",
+				last, last_clean,
+			))
+			last = last_clean
+
 	dept_has_email = bool(dept and "@" in dept)
 	if dept_has_email:
 		issues.append(NormalizationIssue(
@@ -320,6 +347,26 @@ def normalize_name(
 				severity, "name", "Kein Vor- oder Nachname vorhanden", "", "",
 			))
 			return "", "", dept, ContactType.JUNK, issues
+
+	# Nachname is just a dot, dash, or other single non-letter char
+	if last and len(last) < 2 and not last[0].isalpha():
+		issues.append(NormalizationIssue(
+			IssueSeverity.SKIP, "nachname",
+			f"Nachname '{last}' ist kein gültiger Name",
+			last, "",
+		))
+		if not first:
+			return "", "", dept, ContactType.JUNK, issues
+		last = ""
+
+	# Nachname starts with digits — likely an order/reference number, not a person
+	if last and re.match(r"^\d", last):
+		issues.append(NormalizationIssue(
+			IssueSeverity.SKIP, "nachname",
+			f"Nachname '{last}' beginnt mit Ziffern — Referenznummer",
+			last, "",
+		))
+		return "", "", dept, ContactType.FUNCTIONAL, issues
 
 	if first and last and first.lower() == last.lower():
 		if _is_functional(first):
@@ -491,6 +538,15 @@ def normalize_contact(raw: RawContact) -> NormalizationResult:
 
 	if raw.ansprech_nr is None:
 		contact_type = ContactType.COMPANY_ONLY
+
+	# Company-only contact without Name1 → JUNK (completely empty)
+	if contact_type == ContactType.COMPANY_ONLY and not _strip(raw.name1):
+		issues.append(NormalizationIssue(
+			IssueSeverity.SKIP, "name1",
+			"Firmen-Kontakt ohne Firmenname (Name1 leer)",
+			"", "",
+		))
+		contact_type = ContactType.JUNK
 
 	skipped = contact_type in (ContactType.FUNCTIONAL, ContactType.JUNK)
 
