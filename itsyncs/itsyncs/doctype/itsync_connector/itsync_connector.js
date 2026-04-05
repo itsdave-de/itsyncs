@@ -8,31 +8,54 @@ frappe.ui.form.on("ITSync Connector", {
 			});
 		}
 
-		// Info banner for GAL connectors
+		// Help section based on connector type
+		if (frm.doc.connector_type === "Mailbox" || frm.doc.connector_type === "Shared Mailbox") {
+			frm.set_intro(
+				__('<b>Required Azure AD App Permissions (Application):</b>'
+				+ '<ul style="margin: 6px 0 0 16px; padding: 0;">'
+				+ '<li><b>Contacts.ReadWrite</b> — Read/write contacts in the mailbox</li>'
+				+ '<li><b>User.Read.All</b> — Resolve mailbox addresses</li>'
+				+ '</ul>'
+				+ '<div style="margin-top: 6px; color: var(--text-muted);">'
+				+ 'Admin consent must be granted for these permissions in the Azure Portal '
+				+ '(<i>API permissions → Grant admin consent</i>).</div>'),
+				"blue"
+			);
+			if (!frm.doc.contact_folder) {
+				frm.set_intro(
+					__("Using the default contacts folder. Use <b>Settings &rarr; Select Folder</b> to sync from/to a specific subfolder."),
+					"blue"
+				);
+			}
+		}
+
 		if (frm.doc.connector_type === "GAL") {
 			frm.set_intro(
-				__("GAL connectors can be used as source (read) and target (write). "
-				+ "Writing to the GAL requires the Azure App to have: "
-				+ "<b>Exchange.ManageAsApp</b> permission and the <b>Exchange Administrator</b> directory role. "
-				+ "The Enterprise App <b>Office 365 Exchange Online</b> must be registered in the tenant."),
+				__('<b>Required Azure AD App Permissions (Application):</b>'
+				+ '<ul style="margin: 6px 0 0 16px; padding: 0;">'
+				+ '<li><b>Contacts.ReadWrite</b> — Read contacts from Azure AD</li>'
+				+ '<li><b>User.Read.All</b> — Read user directory</li>'
+				+ '<li><b>Exchange.ManageAsApp</b> — Write mail contacts to GAL (target only)</li>'
+				+ '</ul>'
+				+ '<div style="margin-top: 6px;"><b>Additional requirements for GAL write access:</b></div>'
+				+ '<ul style="margin: 4px 0 0 16px; padding: 0;">'
+				+ '<li>Enterprise App <b>Office 365 Exchange Online</b> must be registered in the tenant</li>'
+				+ '<li>The App must have the <b>Exchange Administrator</b> directory role</li>'
+				+ '</ul>'),
 				"blue"
 			);
 		}
 
-		// Info banner for Sage SQL connectors
 		if (frm.doc.connector_type === "Sage SQL") {
 			frm.set_intro(
-				__("Sage SQL connectors are <b>read-only sources</b>. "
-				+ "Contacts are fetched from the Sage Office Line database and synced to an Exchange target. "
-				+ "Change detection uses SQL Server rowversion for efficient incremental syncs."),
-				"blue"
-			);
-		}
-
-		// Info for Mailbox connectors
-		if ((frm.doc.connector_type === "Mailbox" || frm.doc.connector_type === "Shared Mailbox") && !frm.doc.contact_folder) {
-			frm.set_intro(
-				__("Using the default contacts folder. Use <b>Settings → Select Folder</b> to sync from/to a specific subfolder."),
+				__('<b>Sage SQL — Read-only Source</b>'
+				+ '<ul style="margin: 6px 0 0 16px; padding: 0;">'
+				+ '<li>Connects directly to the Sage Office Line SQL Server database</li>'
+				+ '<li>Requires a SQL Server login with <b>read access</b> to the Sage database (e.g. <code>OLKFB</code>)</li>'
+				+ '<li>Tables used: <code>KHKAdressen</code>, <code>KHKAnsprechpartner</code></li>'
+				+ '<li>Change detection via SQL Server <b>rowversion</b> for efficient incremental syncs</li>'
+				+ '<li>Contact normalization filters junk entries automatically (functional names, invalid data)</li>'
+				+ '</ul>'),
 				"blue"
 			);
 		}
