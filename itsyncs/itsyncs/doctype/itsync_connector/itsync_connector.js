@@ -101,6 +101,7 @@ frappe.ui.form.on("ITSync Connector", {
 });
 
 function _update_intro(frm) {
+	frm.set_intro("");
 	let type = frm.doc.connector_type;
 
 	if (type === "Mailbox" || type === "Shared Mailbox") {
