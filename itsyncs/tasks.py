@@ -37,6 +37,7 @@ def run_due_syncs():
 			queue="default",
 			timeout=1800,
 			deduplicate=True,
+			job_id=f"itsync_scheduled_{pair.name}",
 		)
 
 	frappe.db.commit()
