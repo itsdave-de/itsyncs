@@ -2,7 +2,7 @@
 
 Takes raw Sage address/contact data and produces cleaned, normalized
 contact records suitable for Exchange/Outlook import. Handles common
-data quality issues found in Sage OLKFB databases without requiring
+data quality issues found in Sage Office Line databases without requiring
 the customer to fix the source data.
 """
 
@@ -28,7 +28,7 @@ FUNCTIONAL_NAMES: frozenset[str] = frozenset({
 	"einkauf", "disposition", "versand", "lager",
 	"zentrale", "empfang",
 	"wiederkehrende prüfungen", "fällige sicherheitsprüfungen",
-	"prüfungen/erinnerung", "prüfungen/erinnerungen soltau",
+	"prüfungen/erinnerung", "prüfungen/erinnerungen",
 	"rg prüfung",
 	"auftragsbearbeitung",
 })

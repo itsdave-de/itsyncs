@@ -141,7 +141,7 @@ function _update_intro(frm) {
 			__('<b>Sage SQL — Read-only Source</b>'
 			+ '<ul style="margin: 6px 0 0 16px; padding: 0;">'
 			+ '<li>Connects directly to the Sage Office Line SQL Server database</li>'
-			+ '<li>Requires a SQL Server login with <b>read access</b> to the Sage database (e.g. <code>OLKFB</code>)</li>'
+			+ '<li>Requires a SQL Server login with <b>read access</b> to the Sage database</li>'
 			+ '<li>Tables used: <code>KHKAdressen</code>, <code>KHKAnsprechpartner</code></li>'
 			+ '<li>Change detection via SQL Server <b>rowversion</b> for efficient incremental syncs</li>'
 			+ '<li>Contact normalization filters junk entries automatically (functional names, invalid data)</li>'
