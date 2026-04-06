@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ITSync Sage SQL → Exchange Setup Guide</title>
+<style>
+  :root { --blue: #2563eb; --green: #16a34a; --orange: #ea580c; --gray: #6b7280; --border: #e5e7eb; --bg: #f9fafb; --card: #fff; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1f2937; line-height: 1.6; background: var(--bg); }
+  .container { max-width: 900px; margin: 0 auto; padding: 24px; }
+  header { background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; padding: 32px; border-radius: 12px; margin-bottom: 32px; }
+  header h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 4px; }
+  header p { opacity: .85; font-size: .9rem; }
+  h2 { font-size: 1.2rem; margin: 32px 0 12px; padding-bottom: 8px; border-bottom: 2px solid var(--blue); color: #1e40af; }
+  h3 { font-size: 1rem; margin: 20px 0 8px; color: #374151; }
+  p { margin: 8px 0; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: .88rem; }
+  th { text-align: left; padding: 8px 12px; background: #f1f5f9; border-bottom: 2px solid var(--border); font-weight: 600; }
+  td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  td:first-child { font-weight: 600; white-space: nowrap; width: 30%; }
+  tr:last-child td { border-bottom: none; }
+  code { background: #f1f5f9; padding: 1px 5px; border-radius: 3px; font-size: .85em; color: #1e40af; }
+  .step { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 24px; margin: 20px 0; }
+  .step-number { display: inline-block; background: var(--blue); color: #fff; width: 28px; height: 28px; border-radius: 50%; text-align: center; line-height: 28px; font-weight: 700; font-size: .85rem; margin-right: 8px; }
+  .step h2 { border: none; margin: 0 0 16px; padding: 0; display: flex; align-items: center; }
+  .screenshot { margin: 16px 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .screenshot img { width: 100%; display: block; }
+  .screenshot figcaption { padding: 8px 12px; background: #f8fafc; font-size: .8rem; color: var(--gray); border-top: 1px solid var(--border); }
+  .note { background: #eff6ff; border-left: 3px solid var(--blue); padding: 12px 16px; margin: 12px 0; border-radius: 0 6px 6px 0; font-size: .88rem; }
+  .warn { background: #fffbeb; border-left: 3px solid var(--orange); padding: 12px 16px; margin: 12px 0; border-radius: 0 6px 6px 0; font-size: .88rem; }
+  ol.steps { padding-left: 20px; margin: 12px 0; }
+  ol.steps li { margin: 6px 0; }
+  ul.reqs { padding-left: 20px; margin: 8px 0; }
+  ul.reqs li { margin: 4px 0; }
+  .prereq { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin: 16px 0; }
+  .prereq-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .prereq-card h3 { margin: 0 0 8px; font-size: .95rem; color: var(--blue); }
+  .prereq-card ul { padding-left: 18px; font-size: .85rem; }
+  .prereq-card li { margin: 3px 0; }
+  footer { text-align: center; color: var(--gray); font-size: .75rem; padding: 32px; }
+  @media (max-width: 700px) { .prereq { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1>ITSync Setup Guide</h1>
+  <p>Sage Office Line SQL → Exchange Shared Mailbox Kontakt-Sync</p>
+</header>
+
+<!-- Prerequisites -->
+<h2>Voraussetzungen</h2>
+
+<div class="prereq">
+  <div class="prereq-card">
+    <h3>Azure AD / Entra ID</h3>
+    <ul>
+      <li>App Registration mit Application Permissions:
+        <ul>
+          <li><code>Contacts.ReadWrite</code></li>
+          <li><code>User.Read.All</code></li>
+        </ul>
+      </li>
+      <li>Admin Consent erteilt</li>
+      <li>Client Secret erstellt</li>
+    </ul>
+  </div>
+  <div class="prereq-card">
+    <h3>Sage SQL Server</h3>
+    <ul>
+      <li>SQL Server per Netzwerk erreichbar</li>
+      <li>SQL Login mit Lesezugriff</li>
+      <li>Tabellen: <code>KHKAdressen</code>, <code>KHKAnsprechpartner</code></li>
+    </ul>
+  </div>
+  <div class="prereq-card">
+    <h3>Exchange / Microsoft 365</h3>
+    <ul>
+      <li>Shared Mailbox als Sync-Ziel</li>
+      <li>Im selben M365 Tenant</li>
+    </ul>
+  </div>
+</div>
+
+<hr>
+
+<!-- Step 1 -->
+<div class="step">
+  <h2><span class="step-number">1</span> ITSync Tenant anlegen</h2>
+  <p>Der Tenant speichert die Azure AD Zugangsdaten und wird von allen Exchange-Connectoren verwendet.</p>
+  <p><strong>Navigation:</strong> itsyncs &rarr; ITSync Tenant &rarr; Neu</p>
+
+  <table>
+    <tr><th>Feld</th><th>Beschreibung</th></tr>
+    <tr><td>Tenant Name</td><td>Frei wählbarer Name (z.B. Firmenname)</td></tr>
+    <tr><td>Tenant ID</td><td>Verzeichnis-ID (Mandant) aus der Azure App Registration</td></tr>
+    <tr><td>Client ID</td><td>Anwendungs-ID (Client) aus der Azure App Registration</td></tr>
+    <tr><td>Client Secret</td><td>Das erstellte Geheimnis (wird verschlüsselt gespeichert)</td></tr>
+  </table>
+
+  <div class="note">Beim Speichern wird automatisch ein Connection Test durchgeführt, der die Graph API Verbindung und verfügbare Mailboxen prüft.</div>
+
+  <figure class="screenshot">
+    <img src="screenshots/01-tenant.png" alt="ITSync Tenant Konfiguration">
+    <figcaption>ITSync Tenant mit Azure AD Credentials und Connection Status "Connected"</figcaption>
+  </figure>
+</div>
+
+<!-- Step 2 -->
+<div class="step">
+  <h2><span class="step-number">2</span> Sage SQL Connector anlegen (Quelle)</h2>
+  <p>Der Sage SQL Connector verbindet sich direkt mit der SQL Server Datenbank und liest Adressen und Ansprechpartner aus.</p>
+  <p><strong>Navigation:</strong> itsyncs &rarr; ITSync Connector &rarr; Neu</p>
+
+  <table>
+    <tr><th>Feld</th><th>Beschreibung</th></tr>
+    <tr><td>Title</td><td>Frei wählbarer Name (z.B. "Sage Produktion")</td></tr>
+    <tr><td>Connector Type</td><td><strong>Sage SQL</strong> auswählen</td></tr>
+    <tr><td>Tenant</td><td><em>Leer lassen</em> — Sage SQL benötigt keinen Azure Tenant</td></tr>
+    <tr><td>SQL Server Host</td><td>IP-Adresse oder Hostname des SQL Servers</td></tr>
+    <tr><td>SQL Server Port</td><td>Port der SQL Server Instanz (Standard: 1433, bei Named Instances oft ein anderer Port)</td></tr>
+    <tr><td>Database</td><td>Name der Sage-Datenbank</td></tr>
+    <tr><td>Mandant</td><td>Sage Mandantennummer (üblicherweise <code>1</code>)</td></tr>
+    <tr><td>SQL Username</td><td>SQL Server Login</td></tr>
+    <tr><td>SQL Password</td><td>Passwort (wird verschlüsselt gespeichert)</td></tr>
+  </table>
+
+  <div class="warn">Sage SQL Connectoren sind <strong>read-only</strong> — sie können nur als Sync-Quelle verwendet werden, nie als Ziel.</div>
+
+  <figure class="screenshot">
+    <img src="screenshots/02-connector-sage.png" alt="Sage SQL Connector">
+    <figcaption>Sage SQL Connector mit Hilfe-Sektion und SQL-Konfigurationsfeldern</figcaption>
+  </figure>
+
+  <p>Die Hilfe-Sektion oben im Formular zeigt kontextbezogene Informationen je nach gewähltem Connector-Typ:</p>
+
+  <figure class="screenshot">
+    <img src="screenshots/06-connector-sage-new.png" alt="Neuer Sage SQL Connector">
+    <figcaption>Neuen Connector erstellen — Felder und Defaults beim Typ "Sage SQL"</figcaption>
+  </figure>
+</div>
+
+<!-- Step 3 -->
+<div class="step">
+  <h2><span class="step-number">3</span> Exchange Connector anlegen (Ziel)</h2>
+  <p>Der Exchange Connector definiert die Shared Mailbox, in die die Kontakte synchronisiert werden.</p>
+  <p><strong>Navigation:</strong> itsyncs &rarr; ITSync Connector &rarr; Neu</p>
+
+  <table>
+    <tr><th>Feld</th><th>Beschreibung</th></tr>
+    <tr><td>Title</td><td>Frei wählbarer Name (z.B. "Kontakte Shared Mailbox")</td></tr>
+    <tr><td>Connector Type</td><td><strong>Shared Mailbox</strong> auswählen</td></tr>
+    <tr><td>Tenant</td><td>Den in Schritt 1 erstellten Tenant auswählen</td></tr>
+    <tr><td>Email Address</td><td>E-Mail-Adresse der Shared Mailbox</td></tr>
+  </table>
+
+  <div class="note">Optional kann über <strong>Settings &rarr; Select Folder</strong> ein spezifischer Kontaktordner gewählt werden. Standardmäßig wird der Default-Kontaktordner verwendet.</div>
+
+  <figure class="screenshot">
+    <img src="screenshots/03-connector-exchange.png" alt="Exchange Connector">
+    <figcaption>Exchange Shared Mailbox Connector mit Berechtigungs-Hilfe und Folder-Hinweis</figcaption>
+  </figure>
+</div>
+
+<!-- Step 4 -->
+<div class="step">
+  <h2><span class="step-number">4</span> Sync Pair erstellen</h2>
+  <p>Das Sync Pair verbindet Quelle (Sage) mit Ziel (Exchange) und steuert den Sync-Prozess.</p>
+  <p><strong>Navigation:</strong> itsyncs &rarr; ITSync Pair &rarr; Neu</p>
+
+  <table>
+    <tr><th>Feld</th><th>Beschreibung</th></tr>
+    <tr><td>Title</td><td>Frei wählbarer Name (z.B. "Sage → Kontakte")</td></tr>
+    <tr><td>Source</td><td>Den Sage SQL Connector aus Schritt 2 auswählen</td></tr>
+    <tr><td>Target</td><td>Den Exchange Connector aus Schritt 3 auswählen</td></tr>
+    <tr><td>Schedule</td><td>Intervall für automatische Syncs (z.B. "Every 30 Minutes")</td></tr>
+    <tr><td>On Source Delete</td><td><strong>Ignore</strong> = deaktivierte Kontakte bleiben im Ziel<br><strong>Delete</strong> = werden auch im Ziel entfernt</td></tr>
+    <tr><td>Matching Strategy</td><td><strong>Email</strong> für Standard-Matching beim Initial Sync</td></tr>
+  </table>
+
+  <figure class="screenshot">
+    <img src="screenshots/04-sync-pair.png" alt="Sync Pair">
+    <figcaption>Sync Pair "Sage → Kontakte" mit Schedule, Auto-Sync und letztem Sync-Log</figcaption>
+  </figure>
+</div>
+
+<!-- Step 5 -->
+<div class="step">
+  <h2><span class="step-number">5</span> Preview generieren &amp; Initial Sync</h2>
+
+  <h3>Preview</h3>
+  <ol class="steps">
+    <li>Sync Pair öffnen</li>
+    <li><strong>Actions &rarr; Generate Preview</strong> klicken</li>
+    <li>Die Sektion <strong>Sync Preview</strong> zeigt die Anzahl der zu erstellenden Kontakte</li>
+  </ol>
+
+  <h3>Initial Sync</h3>
+  <ol class="steps">
+    <li><strong>Actions &rarr; Run Initial Sync</strong> klicken und bestätigen</li>
+    <li>Der Sync läuft im Hintergrund (je nach Kontaktanzahl einige Minuten)</li>
+    <li>Status wechselt zu "Running" und nach Abschluss zu "Idle"</li>
+  </ol>
+
+  <h3>Auto-Sync aktivieren</h3>
+  <ol class="steps">
+    <li><strong>Auto Sync Enabled</strong> aktivieren und speichern</li>
+    <li>Der Scheduler führt automatisch inkrementelle Syncs durch</li>
+    <li>Nur geänderte Kontakte werden aktualisiert (via SQL Server rowversion)</li>
+  </ol>
+</div>
+
+<!-- Step 6 -->
+<div class="step">
+  <h2><span class="step-number">6</span> Sync Logs prüfen</h2>
+  <p>Jeder Sync erzeugt einen Log-Eintrag mit Status und Zählern.</p>
+  <p><strong>Navigation:</strong> itsyncs &rarr; ITSync Log</p>
+
+  <table>
+    <tr><th>Spalte</th><th>Beschreibung</th></tr>
+    <tr><td>Sync Type</td><td>Initial / Incremental / Manual</td></tr>
+    <tr><td>Status</td><td>Success / Partial / Failed</td></tr>
+    <tr><td>Created</td><td>Neu angelegte Kontakte</td></tr>
+    <tr><td>Updated</td><td>Aktualisierte Kontakte</td></tr>
+    <tr><td>Deleted</td><td>Gelöschte Kontakte</td></tr>
+    <tr><td>Errors</td><td>Fehler (Details im Log-Dokument)</td></tr>
+  </table>
+
+  <figure class="screenshot">
+    <img src="screenshots/05-sync-logs.png" alt="Sync Logs">
+    <figcaption>ITSync Log — Initial Sync und regelmäßige Incremental Syncs (alle 30 Min)</figcaption>
+  </figure>
+</div>
+
+<hr>
+
+<!-- Normalization -->
+<h2>Kontakt-Normalisierung</h2>
+<p>Der Sage SQL Connector bereinigt die Kontaktdaten automatisch beim Import:</p>
+
+<table>
+  <tr><th>Was</th><th>Wie</th></tr>
+  <tr><td>Telefonnummern</td><td>Alle Formate &rarr; +49 E.164 (z.B. <code>(05146) 987269</code> &rarr; <code>+495146987269</code>)</td></tr>
+  <tr><td>E-Mail-Adressen</td><td>Leerzeichen, <code>(at)</code>, kaputte TLDs werden automatisch korrigiert</td></tr>
+  <tr><td>Funktions-Kontakte</td><td>"Rechnungen", "INFO", "AVIS", "Mahnungen" etc. werden gefiltert</td></tr>
+  <tr><td>Namenlose Kontakte</td><td>Einträge ohne Vor-/Nachname werden übersprungen</td></tr>
+  <tr><td>Auftragsnummern</td><td>Nachnamen die mit Ziffern beginnen werden als Referenz erkannt und gefiltert</td></tr>
+  <tr><td>PLZ</td><td>Nachgestellte Leerzeichen werden entfernt</td></tr>
+  <tr><td>Homepage</td><td><code>https://</code> wird ergänzt wenn fehlt</td></tr>
+  <tr><td>Sonderzeichen</td><td>Führende Sonderzeichen in Namen werden entfernt</td></tr>
+</table>
+
+<hr>
+
+<!-- Troubleshooting -->
+<h2>Fehlerbehebung</h2>
+
+<table>
+  <tr><th>Problem</th><th>Lösung</th></tr>
+  <tr><td>Tenant-Test schlägt fehl</td><td>Azure App Permissions prüfen, Admin Consent erteilen</td></tr>
+  <tr><td>SQL Server nicht erreichbar</td><td>Firewall-Regeln prüfen, Port korrekt?</td></tr>
+  <tr><td>0 Kontakte gefunden</td><td>Mandant-Nummer korrekt? Aktive Adressen vorhanden (Aktiv = -1)?</td></tr>
+  <tr><td>Sync bleibt auf "Running"</td><td>Worker-Prozesse prüfen: <code>sudo supervisorctl status</code></td></tr>
+  <tr><td>Auto-Sync läuft nicht</td><td>Auto Sync Enabled? Initial Sync abgeschlossen? Scheduler aktiv?</td></tr>
+  <tr><td>Kontakte nicht aktualisiert</td><td>Schedule-Intervall abgelaufen? ITSync Log auf Fehler prüfen</td></tr>
+</table>
+
+<footer>
+  ITSync Sage SQL Setup Guide &middot; itsdave GmbH
+</footer>
+
+</div>
+</body>
+</html>
