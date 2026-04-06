@@ -154,7 +154,7 @@
    "fieldtype": "Int",
    "label": "SQL Server Port",
    "default": "1433",
-   "description": "Port (e.g. 60765 for named instances)",
+   "description": "Port number (default 1433, check for named instances)",
    "mandatory_depends_on": "eval:doc.connector_type=='Sage SQL'"
   },
   {
