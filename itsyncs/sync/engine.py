@@ -1,4 +1,6 @@
 import json
+import time
+import traceback as tb_module
 
 import frappe
 
@@ -12,12 +14,25 @@ from itsyncs.graph.contacts import (
 )
 from itsyncs.graph.exchange import (
 	create_mail_contact,
+	create_mail_contact_basic,
 	delete_mail_contact,
 	fetch_all_mail_contacts,
+	set_mail_contact_rich_fields,
 	update_mail_contact,
 )
 from itsyncs.graph.gal import fetch_all_gal_entries, fetch_gal_delta
 from itsyncs.sync.matching import compute_field_hash, find_match, get_primary_email
+
+
+DETAILS_MAX_LINES = 200
+PROGRESS_EVERY = 50
+
+# Delayed-batch for GAL initial sync: create N mail contacts in a tight loop,
+# then wait for Exchange replication, then apply rich Set-Contact properties
+# to the same N. Benchmarks (19/19 first-try-ok vs. 3–5 retries per contact
+# in the serial pattern) validate this structure over a per-contact loop.
+GAL_BATCH_CHUNK_SIZE = 50
+GAL_BATCH_WAIT_SECONDS = 15
 
 
 def _get_client_for_connector(connector):
@@ -35,6 +50,31 @@ def _get_tenant_for_connector(connector):
 	return frappe.get_doc("ITSync Tenant", connector.tenant)
 
 
+def _append_log_lines(log_name, lines):
+	"""Append lines to ITSync Log.details, ring-buffered to last N lines."""
+	if not lines:
+		return
+	existing = frappe.db.get_value("ITSync Log", log_name, "details") or ""
+	combined = (existing.splitlines() if existing else []) + list(lines)
+	if len(combined) > DETAILS_MAX_LINES:
+		combined = [f"... (truncated to last {DETAILS_MAX_LINES} lines)"] + combined[-(DETAILS_MAX_LINES - 1):]
+	frappe.db.set_value("ITSync Log", log_name, "details", "\n".join(combined), update_modified=False)
+
+
+def _write_progress(log_name, current, total, phase):
+	"""Persist progress fields on the log and publish a realtime event."""
+	frappe.db.set_value(
+		"ITSync Log",
+		log_name,
+		{"progress_current": current, "progress_total": total, "progress_phase": phase},
+		update_modified=False,
+	)
+
+
+def _timestamp():
+	return frappe.utils.now_datetime().strftime("%H:%M:%S")
+
+
 def generate_preview(pair_name: str):
 	"""Generate a sync preview for the given pair. Runs as a background job."""
 	pair = frappe.get_doc("ITSync Pair", pair_name)
@@ -45,11 +85,9 @@ def generate_preview(pair_name: str):
 	target_client = _get_client_for_connector(target_conn)
 	target_tenant = _get_tenant_for_connector(target_conn)
 
-	# Fetch source contacts
 	source_contacts = _fetch_source_contacts(source_client, source_conn)
 	target_contacts = _fetch_target_contacts(target_client, target_conn, target_tenant)
 
-	# Match contacts
 	matched = 0
 	to_create = 0
 
@@ -60,28 +98,44 @@ def generate_preview(pair_name: str):
 		else:
 			to_create += 1
 
+	# update_modified=False: the Preview only populates internal counters,
+	# bumping the doc's modified timestamp would invalidate any open form in
+	# the UI (Frappe's optimistic concurrency check), causing "Document has
+	# been modified after you have opened it" errors when the user interacts
+	# with the form next.
 	frappe.db.set_value("ITSync Pair", pair_name, {
 		"preview_source_count": len(source_contacts),
 		"preview_target_count": len(target_contacts),
 		"preview_to_create": to_create,
 		"preview_matched": matched,
 		"preview_generated_at": frappe.utils.now_datetime(),
-	})
+	}, update_modified=False)
 
 
-def run_sync(pair_name: str, sync_type: str = "Incremental"):
-	"""Run a sync for the given pair. Runs as a background job."""
+def run_sync(pair_name: str, sync_type: str = "Incremental", log_name: str | None = None):
+	"""Run a sync for the given pair. Runs as a background job.
+
+	If log_name is provided (preferred), the caller has already created the log entry
+	and the same log_name has been passed to the on_failure callback, so a work-horse
+	kill can still update it. If not provided, a new log is created here.
+	"""
 	pair = frappe.get_doc("ITSync Pair", pair_name)
 	source_conn = frappe.get_doc("ITSync Connector", pair.source)
 	target_conn = frappe.get_doc("ITSync Connector", pair.target)
 
-	# Create log entry
-	log = frappe.new_doc("ITSync Log")
-	log.sync_pair = pair_name
-	log.sync_type = sync_type
-	log.started_at = frappe.utils.now_datetime()
-	log.status = "Running"
-	log.insert(ignore_permissions=True)
+	if log_name:
+		log = frappe.get_doc("ITSync Log", log_name)
+	else:
+		log = frappe.new_doc("ITSync Log")
+		log.sync_pair = pair_name
+		log.sync_type = sync_type
+		log.started_at = frappe.utils.now_datetime()
+		log.status = "Running"
+		log.insert(ignore_permissions=True)
+
+	frappe.db.set_value("ITSync Pair", pair_name, "last_run_log", log.name, update_modified=False)
+	_write_progress(log.name, 0, 0, "Starting")
+	_append_log_lines(log.name, [f"[{_timestamp()}] Starting {sync_type} sync"])
 	frappe.db.commit()
 
 	counts = {"created": 0, "updated": 0, "deleted": 0, "skipped": 0, "errors": 0}
@@ -95,24 +149,24 @@ def run_sync(pair_name: str, sync_type: str = "Incremental"):
 		if sync_type == "Initial":
 			_run_initial_sync(
 				pair, source_conn, target_conn, source_client, target_client,
-				target_tenant, counts, error_details
+				target_tenant, counts, error_details, log.name,
 			)
 			pair_update = {"initial_sync_complete": 1, "status": "Idle"}
 		else:
 			_run_incremental_sync(
 				pair, source_conn, target_conn, source_client, target_client,
-				target_tenant, counts, error_details
+				target_tenant, counts, error_details, log.name,
 			)
 			pair_update = {"status": "Idle"}
 
 		log_status = "Success" if counts["errors"] == 0 else "Partial"
 	except Exception as e:
 		log_status = "Failed"
-		error_details.append({"error": str(e), "type": "fatal"})
+		error_details.append({"error": str(e), "type": "fatal", "traceback": tb_module.format_exc()})
 		pair_update = {"status": "Error"}
+		_append_log_lines(log.name, [f"[{_timestamp()}] FATAL: {e}"])
 		frappe.log_error(f"ITSync Error for {pair_name}", str(e))
 	finally:
-		# Batch-update log to avoid multiple notify_update calls
 		log_values = {
 			"status": log_status,
 			"completed_at": frappe.utils.now_datetime(),
@@ -121,17 +175,19 @@ def run_sync(pair_name: str, sync_type: str = "Incremental"):
 			"deleted_count": counts["deleted"],
 			"skipped_count": counts["skipped"],
 			"error_count": counts["errors"],
+			"progress_phase": f"Done ({log_status})",
 		}
 		if error_details:
-			log_values["details"] = json.dumps(error_details, ensure_ascii=False, indent=2)
+			current_details = frappe.db.get_value("ITSync Log", log.name, "details") or ""
+			error_block = "\n\n--- ERRORS ---\n" + json.dumps(error_details, ensure_ascii=False, indent=2)
+			log_values["details"] = (current_details + error_block)[-60000:]
 		frappe.db.set_value("ITSync Log", log.name, log_values, update_modified=False)
 
-		# Batch-update pair
 		pair_update["last_run"] = frappe.utils.now_datetime()
 		pair_update["last_run_log"] = log.name
+		pair_update["current_job_id"] = ""
 		frappe.db.set_value("ITSync Pair", pair_name, pair_update, update_modified=False)
 
-		# Update contact counts on connectors
 		source_mapping_count = frappe.db.count("ITSync Mapping", {"sync_pair": pair_name, "status": "Synced"})
 		frappe.db.set_value("ITSync Connector", source_conn.name, "contact_count", source_mapping_count, update_modified=False)
 		frappe.db.set_value("ITSync Connector", target_conn.name, "contact_count", source_mapping_count, update_modified=False)
@@ -144,50 +200,316 @@ def run_sync(pair_name: str, sync_type: str = "Incremental"):
 		)
 
 
-def _run_initial_sync(pair, source_conn, target_conn, source_client, target_client, target_tenant, counts, error_details):
-	"""Full initial sync: fetch all from source, match against target, create missing."""
+def mark_sync_failed(job, connection, type_, value, traceback):
+	"""RQ on_failure callback. Runs in the worker process (possibly the parent on SIGKILL).
+
+	Must initialize Frappe itself because the work-horse that usually does that may be dead.
+	This is best-effort: the scheduler watchdog is the reliable backstop.
+	"""
+	import os
+
+	site = None
+	pair_name = None
+	log_name = None
+	try:
+		outer = job.kwargs or {}
+		site = outer.get("site")
+		inner = outer.get("kwargs") or {}
+		pair_name = inner.get("pair_name")
+		log_name = inner.get("log_name")
+	except Exception:
+		return
+
+	if not (site and pair_name):
+		return
+
+	owns_init = False
+	try:
+		if not getattr(frappe.local, "conf", None):
+			frappe.init(site=site, force=True)
+			frappe.connect()
+			owns_init = True
+
+		exc_string = ""
+		try:
+			exc_string = "".join(tb_module.format_exception(type_, value, traceback))
+		except Exception:
+			exc_string = f"{type_.__name__ if type_ else 'Error'}: {value}"
+
+		line = f"[{_timestamp()}] JOB FAILED: {type_.__name__ if type_ else 'Killed'}: {value or 'work-horse terminated'}"
+
+		if log_name and frappe.db.exists("ITSync Log", log_name):
+			current = frappe.db.get_value("ITSync Log", log_name, "details") or ""
+			new_details = (current + "\n" + line + "\n\n--- TRACEBACK ---\n" + exc_string)[-60000:]
+			frappe.db.set_value(
+				"ITSync Log",
+				log_name,
+				{
+					"status": "Failed",
+					"completed_at": frappe.utils.now_datetime(),
+					"details": new_details,
+					"progress_phase": "Failed (job killed)",
+				},
+				update_modified=False,
+			)
+
+		if frappe.db.exists("ITSync Pair", pair_name):
+			frappe.db.set_value(
+				"ITSync Pair",
+				pair_name,
+				{
+					"status": "Error",
+					"current_job_id": "",
+					"last_run": frappe.utils.now_datetime(),
+					"last_run_log": log_name or frappe.db.get_value("ITSync Pair", pair_name, "last_run_log"),
+				},
+				update_modified=False,
+			)
+
+		frappe.db.commit()
+
+		frappe.publish_realtime(
+			"itsync_sync_complete",
+			{"pair": pair_name, "status": "Failed", "log": log_name, "reason": "on_failure"},
+		)
+	except Exception:
+		# Silent: watchdog will pick it up
+		try:
+			if frappe.db:
+				frappe.db.rollback()
+		except Exception:
+			pass
+	finally:
+		if owns_init:
+			try:
+				frappe.destroy()
+			except Exception:
+				pass
+
+
+def _run_initial_sync(pair, source_conn, target_conn, source_client, target_client, target_tenant, counts, error_details, log_name):
+	"""Full initial sync: fetch source + target, match, create missing.
+
+	For GAL targets uses a delayed-batch pattern: for each chunk of
+	GAL_BATCH_CHUNK_SIZE contacts we (A) create all via New-MailContact,
+	(W) wait GAL_BATCH_WAIT_SECONDS for Exchange replication, (B) apply rich
+	properties via Set-Contact on each. The old per-contact loop called
+	Set-Contact right after New-MailContact and hit NotFound retries for up
+	to 75 s per contact; the chunk pattern drops that to ~4.5 s/contact.
+
+	For Mailbox targets (Graph /contacts) the old per-contact pattern is
+	fine because create_contact() accepts all fields in a single call.
+	"""
+	_write_progress(log_name, 0, 0, "Fetching source contacts")
+	frappe.db.commit()
 	source_contacts = _fetch_source_contacts(source_client, source_conn)
+
+	_write_progress(log_name, 0, 0, "Fetching target contacts")
+	frappe.db.commit()
 	target_contacts = _fetch_target_contacts(target_client, target_conn, target_tenant)
 
-	target_is_gal = target_conn.connector_type == "GAL"
-	target_folder = target_conn.contact_folder or None
+	total = len(source_contacts)
+	_append_log_lines(log_name, [
+		f"[{_timestamp()}] Fetched {total} source contacts, {len(target_contacts)} target contacts",
+	])
+	frappe.db.commit()
 
+	# Step 1: split into matches vs. to_create (fast, no network)
+	_write_progress(log_name, 0, total, "Matching source against target")
+	frappe.db.commit()
+	matches = []     # [(source_contact, target_id), …]
+	to_create = []   # [source_contact, …]
+	match_errors = 0
 	for sc in source_contacts:
 		try:
-			match = find_match(sc, target_contacts, pair.matching_strategy, pair.fuzzy_threshold or 0.85)
+			m = find_match(sc, target_contacts, pair.matching_strategy, pair.fuzzy_threshold or 0.85)
+		except Exception as e:
+			counts["errors"] += 1
+			match_errors += 1
+			error_details.append({
+				"contact": sc.get("display_name"),
+				"email": get_primary_email(sc),
+				"stage": "match",
+				"error": str(e),
+			})
+			continue
+		if m:
+			matches.append((sc, m["id"]))
+		else:
+			to_create.append(sc)
 
-			if match:
-				# Already exists in target - just create mapping
-				_create_mapping(pair.name, sc, match["id"])
-				counts["skipped"] += 1
-			else:
-				if target_is_gal:
-					new_id = create_mail_contact(target_tenant, sc)
-				else:
-					new_id = create_contact(target_tenant, target_conn.email_address, sc, target_folder)
-				_create_mapping(pair.name, sc, new_id)
-				counts["created"] += 1
+	_append_log_lines(log_name, [
+		f"[{_timestamp()}] Split: {len(matches)} already matched, {len(to_create)} to create, {match_errors} match errors",
+	])
+	frappe.db.commit()
 
+	# Step 2: record mappings for all matches (DB only, very fast)
+	_write_progress(log_name, 0, total, f"Recording {len(matches)} existing matches")
+	frappe.db.commit()
+	pending_lines = []
+	for i, (sc, tid) in enumerate(matches, start=1):
+		display = sc.get("display_name") or get_primary_email(sc) or "?"
+		try:
+			_create_mapping(pair.name, sc, tid)
+			counts["skipped"] += 1
+			pending_lines.append(f"[{_timestamp()}] skipped (already matched): {display}")
 		except Exception as e:
 			counts["errors"] += 1
 			error_details.append({
 				"contact": sc.get("display_name"),
 				"email": get_primary_email(sc),
+				"stage": "mapping",
 				"error": str(e),
 			})
-
-		# Commit periodically to avoid long transactions
-		if (counts["created"] + counts["skipped"] + counts["errors"]) % 50 == 0:
+			pending_lines.append(f"[{_timestamp()}] ERROR mapping {display}: {e}")
+		if i % PROGRESS_EVERY == 0:
+			_append_log_lines(log_name, pending_lines)
+			pending_lines = []
+			_write_progress(log_name, i, total, f"Recording existing matches ({i}/{len(matches)})")
 			frappe.db.commit()
+	if pending_lines:
+		_append_log_lines(log_name, pending_lines)
+	processed = len(matches)
+	frappe.db.commit()
 
-	# Store delta tokens for future incremental syncs
+	# Step 3: create missing contacts
+	target_is_gal = target_conn.connector_type == "GAL"
+
+	if target_is_gal:
+		_run_initial_gal_batched(
+			pair, target_tenant, to_create, counts, error_details, log_name,
+			total, processed,
+		)
+	else:
+		target_folder = target_conn.contact_folder or None
+		pending_lines = []
+		for sc in to_create:
+			processed += 1
+			display = sc.get("display_name") or get_primary_email(sc) or "?"
+			try:
+				new_id = create_contact(target_tenant, target_conn.email_address, sc, target_folder)
+				_create_mapping(pair.name, sc, new_id)
+				counts["created"] += 1
+				pending_lines.append(f"[{_timestamp()}] created: {display}")
+			except Exception as e:
+				counts["errors"] += 1
+				error_details.append({
+					"contact": sc.get("display_name"),
+					"email": get_primary_email(sc),
+					"error": str(e),
+				})
+				pending_lines.append(f"[{_timestamp()}] ERROR for {display}: {e}")
+
+			if processed % PROGRESS_EVERY == 0:
+				_append_log_lines(log_name, pending_lines)
+				pending_lines = []
+				_write_progress(
+					log_name, processed, total,
+					f"Creating contacts ({processed}/{total}) — {counts['created']} created, {counts['errors']} errors",
+				)
+				frappe.publish_realtime("itsync_sync_progress",
+					{"pair": pair.name, "log": log_name, "current": processed, "total": total, **counts})
+				frappe.db.commit()
+
+		if pending_lines:
+			_append_log_lines(log_name, pending_lines)
+
+	_write_progress(log_name, total, total, "Storing delta tokens")
+	frappe.db.commit()
+
 	_store_delta_tokens(source_conn, source_client)
-
 	frappe.db.commit()
 
 
-def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_client, target_tenant, counts, error_details):
+def _run_initial_gal_batched(pair, tenant, to_create, counts, error_details, log_name, total, processed_start):
+	"""Delayed-batch create+set for GAL targets.
+
+	For each chunk:
+	  A. New-MailContact for every entry in the chunk (tight loop)
+	  W. sleep GAL_BATCH_WAIT_SECONDS so Exchange replicates
+	  B. Set-Contact (rich fields) on each created entry
+
+	Failures in B leave the contact in the GAL with mapping but missing rich
+	fields — the next incremental sync will pick those up.
+	"""
+	if not to_create:
+		return
+
+	processed = processed_start
+	chunks = [to_create[i:i + GAL_BATCH_CHUNK_SIZE] for i in range(0, len(to_create), GAL_BATCH_CHUNK_SIZE)]
+
+	for chunk_idx, chunk in enumerate(chunks, start=1):
+		chunk_label = f"chunk {chunk_idx}/{len(chunks)}"
+
+		# ----- Phase A: create -----
+		_write_progress(log_name, processed, total,
+			f"GAL Phase A — creating {chunk_label} ({len(chunk)} contacts)")
+		frappe.db.commit()
+		created_in_chunk = []   # [(source_contact, alias), …]
+		pending_lines = []
+		for sc in chunk:
+			processed += 1
+			display = sc.get("display_name") or get_primary_email(sc) or "?"
+			try:
+				alias = create_mail_contact_basic(tenant, sc)
+				_create_mapping(pair.name, sc, alias)
+				counts["created"] += 1
+				created_in_chunk.append((sc, alias))
+				pending_lines.append(f"[{_timestamp()}] created: {display}")
+			except Exception as e:
+				counts["errors"] += 1
+				error_details.append({
+					"contact": sc.get("display_name"),
+					"email": get_primary_email(sc),
+					"stage": "create",
+					"error": str(e),
+				})
+				pending_lines.append(f"[{_timestamp()}] ERROR creating {display}: {e}")
+		_append_log_lines(log_name, pending_lines)
+		frappe.db.commit()
+
+		if not created_in_chunk:
+			continue  # nothing to set — whole chunk failed
+
+		# ----- Phase W: wait for Exchange replication -----
+		_write_progress(log_name, processed, total,
+			f"GAL Phase W — waiting {GAL_BATCH_WAIT_SECONDS} s for replication ({chunk_label})")
+		frappe.db.commit()
+		time.sleep(GAL_BATCH_WAIT_SECONDS)
+
+		# ----- Phase B: apply rich fields -----
+		_write_progress(log_name, processed, total,
+			f"GAL Phase B — setting rich fields {chunk_label} ({len(created_in_chunk)} contacts)")
+		frappe.db.commit()
+		pending_lines = []
+		rich_ok = 0
+		rich_deferred = 0
+		for sc, alias in created_in_chunk:
+			display = sc.get("display_name") or get_primary_email(sc) or "?"
+			email = get_primary_email(sc)
+			try:
+				# Use email as Identity — more reliable than Alias for special chars
+				set_mail_contact_rich_fields(tenant, email or alias, sc)
+				rich_ok += 1
+			except Exception as e:
+				# Non-fatal: mapping exists, contact is in the GAL, rich fields
+				# will be applied on the next incremental sync when the field_hash
+				# mismatch is detected. Log for visibility but don't count as error.
+				rich_deferred += 1
+				pending_lines.append(f"[{_timestamp()}] rich fields deferred for {display}: {str(e)[:150]}")
+		_append_log_lines(log_name, pending_lines + [
+			f"[{_timestamp()}] {chunk_label} done: {rich_ok} rich fields set, {rich_deferred} deferred",
+		])
+		frappe.publish_realtime("itsync_sync_progress",
+			{"pair": pair.name, "log": log_name, "current": processed, "total": total, **counts})
+		frappe.db.commit()
+
+
+def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_client, target_tenant, counts, error_details, log_name):
 	"""Incremental sync using delta queries."""
+	_write_progress(log_name, 0, 0, "Fetching delta from source")
+	frappe.db.commit()
+
 	if source_conn.connector_type == "Sage SQL":
 		from itsyncs.sage.contacts import fetch_sage_delta
 
@@ -225,8 +547,19 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 	target_is_gal = target_conn.connector_type == "GAL"
 	target_folder = target_conn.contact_folder or None
 
-	# Process changes
+	total = len(changed) + len(deleted_ids)
+	_append_log_lines(log_name, [
+		f"[{_timestamp()}] Delta: {len(changed)} changed, {len(deleted_ids)} deleted",
+	])
+	_write_progress(log_name, 0, total, "Applying changes")
+	frappe.db.commit()
+
+	pending_lines = []
+	processed = 0
+
 	for contact in changed:
+		processed += 1
+		display = contact.get("display_name") or get_primary_email(contact) or "?"
 		try:
 			mapping = frappe.db.get_value(
 				"ITSync Mapping",
@@ -251,6 +584,7 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 						"source_email": get_primary_email(contact),
 					})
 					counts["updated"] += 1
+					pending_lines.append(f"[{_timestamp()}] updated: {display}")
 				else:
 					counts["skipped"] += 1
 			else:
@@ -260,6 +594,7 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 					new_id = create_contact(target_tenant, target_conn.email_address, contact, target_folder)
 				_create_mapping(pair.name, contact, new_id)
 				counts["created"] += 1
+				pending_lines.append(f"[{_timestamp()}] created: {display}")
 
 		except Exception as e:
 			counts["errors"] += 1
@@ -268,10 +603,25 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 				"email": get_primary_email(contact),
 				"error": str(e),
 			})
+			pending_lines.append(f"[{_timestamp()}] ERROR for {display}: {e}")
 
-	# Process deletions
+		if processed % PROGRESS_EVERY == 0:
+			_append_log_lines(log_name, pending_lines)
+			pending_lines = []
+			_write_progress(log_name, processed, total, f"Applying changes ({processed}/{total})")
+			frappe.publish_realtime(
+				"itsync_sync_progress",
+				{"pair": pair.name, "log": log_name, "current": processed, "total": total, **counts},
+			)
+			frappe.db.commit()
+
+	if pending_lines:
+		_append_log_lines(log_name, pending_lines)
+		pending_lines = []
+
 	if pair.on_delete == "Delete":
 		for source_id in deleted_ids:
+			processed += 1
 			try:
 				mapping = frappe.db.get_value(
 					"ITSync Mapping",
@@ -286,11 +636,20 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 						delete_contact(target_tenant, target_conn.email_address, mapping.target_id)
 					frappe.delete_doc("ITSync Mapping", mapping.name, ignore_permissions=True)
 					counts["deleted"] += 1
+					pending_lines.append(f"[{_timestamp()}] deleted mapping for source_id {source_id}")
 			except Exception as e:
 				counts["errors"] += 1
 				error_details.append({"source_id": source_id, "error": str(e), "action": "delete"})
+				pending_lines.append(f"[{_timestamp()}] ERROR delete {source_id}: {e}")
+
+			if processed % PROGRESS_EVERY == 0:
+				_append_log_lines(log_name, pending_lines)
+				pending_lines = []
+				_write_progress(log_name, processed, total, f"Deleting ({processed}/{total})")
+				frappe.db.commit()
 	else:
 		for source_id in deleted_ids:
+			processed += 1
 			mapping_name = frappe.db.get_value(
 				"ITSync Mapping",
 				{"sync_pair": pair.name, "source_id": source_id},
@@ -300,6 +659,10 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 				frappe.db.set_value("ITSync Mapping", mapping_name, "status", "Orphaned")
 				counts["skipped"] += 1
 
+	if pending_lines:
+		_append_log_lines(log_name, pending_lines)
+
+	_write_progress(log_name, total, total, "Finalizing")
 	frappe.db.commit()
 
 

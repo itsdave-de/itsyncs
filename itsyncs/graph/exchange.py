@@ -18,6 +18,12 @@ import httpx
 # Module-level token cache: {tenant_id: (token_str, expiry_timestamp)}
 _exo_token_cache: dict[str, tuple[str, float]] = {}
 
+# Module-level primary-domain cache: {tenant_id: "contoso.onmicrosoft.com"}
+_primary_domain_cache: dict[str, str] = {}
+
+# Documented system mailbox GUID (same for every Microsoft 365 tenant)
+SYSTEM_MAILBOX_GUID = "bb558c35-97f1-4cb9-8ff7-d53741dc928c"
+
 
 def get_exchange_token(tenant) -> str:
 	"""Get a cached Exchange Online access token."""
@@ -46,8 +52,79 @@ def get_exchange_token(tenant) -> str:
 	return token.token
 
 
+def _resolve_primary_domain(tenant) -> str | None:
+	"""Return the tenant's primary onmicrosoft.com domain, caching across calls.
+
+	Looks up, in order:
+	  1. module-level cache
+	  2. tenant.primary_domain field on the doc
+	  3. Get-OrganizationConfig via REST (without anchor header, one-time)
+
+	Result 3 is persisted onto the doc so subsequent worker restarts skip the
+	lookup. Returns None if nothing works — callers must handle that by skipping
+	the anchor header.
+	"""
+	import frappe
+
+	tid = tenant.tenant_id
+	if tid in _primary_domain_cache:
+		return _primary_domain_cache[tid]
+
+	existing = getattr(tenant, "primary_domain", None)
+	if existing:
+		_primary_domain_cache[tid] = existing
+		return existing
+
+	# One-off unrouted probe to learn the primary domain.
+	try:
+		token = get_exchange_token(tenant)
+		url = f"https://outlook.office365.com/adminapi/beta/{tid}/InvokeCommand"
+		resp = httpx.post(
+			url,
+			headers={
+				"Authorization": f"Bearer {token}",
+				"Content-Type": "application/json",
+				"Accept-Encoding": "identity",
+			},
+			json={"CmdletInput": {"CmdletName": "Get-OrganizationConfig", "Parameters": {}}},
+			timeout=30,
+		)
+		if resp.status_code == 200:
+			values = resp.json().get("value", [])
+			if values:
+				# Get-OrganizationConfig returns Name = "<tenant>.onmicrosoft.com"
+				domain = values[0].get("Name") or values[0].get("Identity")
+				if domain:
+					_primary_domain_cache[tid] = domain
+					try:
+						frappe.db.set_value("ITSync Tenant", tenant.name, "primary_domain",
+											domain, update_modified=False)
+						frappe.db.commit()
+					except Exception:
+						pass  # Non-fatal — cache in memory still works
+					return domain
+	except Exception:
+		# Silent: fall back to no anchor. Caller handles the None return value.
+		pass
+
+	return None
+
+
+def _build_anchor(tenant) -> str | None:
+	"""Build the X-AnchorMailbox value for app-only Exchange routing."""
+	domain = _resolve_primary_domain(tenant)
+	if not domain:
+		return None
+	return f"APP:SystemMailbox{{{SYSTEM_MAILBOX_GUID}}}@{domain}"
+
+
 def _invoke_command(tenant, cmdlet_name: str, parameters: dict) -> list[dict]:
 	"""Execute an Exchange cmdlet via InvokeCommand REST API.
+
+	Sends the X-AnchorMailbox header so the request is pinned to the tenant's
+	backend server. Without this header, Exchange routes requests to arbitrary
+	backends — a New-MailContact may land on one server and the immediately
+	following Set-Contact on another, causing NotFound + long retry waits.
 
 	Returns the list of result objects from the 'value' array.
 	"""
@@ -59,26 +136,58 @@ def _invoke_command(tenant, cmdlet_name: str, parameters: dict) -> list[dict]:
 	token = get_exchange_token(tenant)
 	url = f"https://outlook.office365.com/adminapi/beta/{tenant.tenant_id}/InvokeCommand"
 
-	resp = httpx.post(
-		url,
-		headers={
-			"Authorization": f"Bearer {token}",
-			"Content-Type": "application/json",
-			"Accept-Encoding": "identity",
-		},
-		json={"CmdletInput": {"CmdletName": cmdlet_name, "Parameters": parameters}},
-		timeout=60,
-	)
+	headers = {
+		"Authorization": f"Bearer {token}",
+		"Content-Type": "application/json",
+		"Accept-Encoding": "identity",
+	}
+	anchor = _build_anchor(tenant)
+	if anchor:
+		headers["X-AnchorMailbox"] = anchor
 
-	if resp.status_code != 200:
-		raise Exception(f"Exchange {cmdlet_name} failed ({resp.status_code}): {resp.text[:500]}")
+	body = {"CmdletInput": {"CmdletName": cmdlet_name, "Parameters": parameters}}
 
-	data = resp.json()
-	warnings = data.get("@adminapi.warnings", [])
-	if warnings:
-		frappe.log_error(f"Exchange {cmdlet_name} warnings", str(warnings))
+	# Up to 2 attempts for transient transport faults (ReadTimeout, 429, 503).
+	# NotFound/replication retries happen one layer up in _invoke_with_retry.
+	last_exc = None
+	for attempt in range(2):
+		try:
+			resp = httpx.post(url, headers=headers, json=body, timeout=30)
+		except httpx.ReadTimeout as e:
+			last_exc = e
+			if attempt == 0:
+				time.sleep(1)
+				continue
+			raise Exception(f"Exchange {cmdlet_name} failed: read timeout after 2 attempts") from e
+		except httpx.HTTPError as e:
+			raise Exception(f"Exchange {cmdlet_name} transport error: {e}") from e
 
-	return data.get("value", [])
+		if resp.status_code == 429 or resp.status_code == 503:
+			retry_after = resp.headers.get("Retry-After")
+			try:
+				wait = int(retry_after) if retry_after else 2
+			except ValueError:
+				wait = 5
+			if attempt == 0:
+				time.sleep(min(wait, 10))
+				continue
+			raise Exception(f"Exchange {cmdlet_name} throttled ({resp.status_code}), Retry-After={retry_after}")
+
+		if resp.status_code != 200:
+			raise Exception(f"Exchange {cmdlet_name} failed ({resp.status_code}): {resp.text[:500]}")
+
+		# success
+		data = resp.json()
+		# Warnings from Exchange (pagination hints, throttle info, etc.) are
+		# informational — do NOT route through frappe.log_error because that
+		# pops a toast for every System Manager. Drop them silently; callers
+		# that truly need them can check the response directly.
+		return data.get("value", [])
+
+	# Defensive: loop should always either return or raise
+	if last_exc:
+		raise last_exc
+	raise Exception(f"Exchange {cmdlet_name}: unreachable")
 
 
 def fetch_all_mail_contacts(tenant) -> list[dict]:
@@ -144,18 +253,59 @@ def create_mail_contact(tenant, contact_data: dict) -> str:
 	if rich_params:
 		rich_params["Identity"] = email
 		try:
-			_invoke_with_retry(tenant, "Set-Contact", rich_params, max_retries=5)
+			_invoke_with_retry(tenant, "Set-Contact", rich_params, max_retries=8)
 		except Exception:
 			# Non-fatal: contact exists in GAL but rich fields may be missing.
-			# They will be updated on the next incremental sync.
-			import frappe
-			frappe.log_error(
-				f"Set-Contact deferred for {email}",
-				"Contact was created but rich properties could not be set due to replication delay. "
-				"They will be applied on the next sync.",
-			)
+			# They will be updated on the next incremental sync. We intentionally
+			# do NOT call frappe.log_error here — it would pop a toast for every
+			# System Manager. The deferred Set-Contact is expected noise during
+			# bulk syncs; the sync log's own details field already records it.
+			pass
 
 	return alias
+
+
+def create_mail_contact_basic(tenant, contact_data: dict) -> str:
+	"""Create a mail contact via New-MailContact ONLY — no Set-Contact.
+
+	Returns the Alias. Intended for the delayed-batch pattern in _run_initial_sync:
+	many of these in rapid succession, then a wait for Exchange replication, then
+	set_mail_contact_rich_fields() for each in a second pass.
+	"""
+	email = _get_primary_email(contact_data)
+	if not email:
+		raise ValueError("Contact must have at least one email address to create in GAL.")
+
+	display_name = contact_data.get("display_name") or email
+	params = {
+		"Name": display_name,
+		"ExternalEmailAddress": email,
+		"DisplayName": display_name,
+	}
+	if contact_data.get("given_name"):
+		params["FirstName"] = contact_data["given_name"]
+	if contact_data.get("surname"):
+		params["LastName"] = contact_data["surname"]
+
+	results = _invoke_command(tenant, "New-MailContact", params)
+	if not results:
+		raise Exception("New-MailContact returned no results.")
+	alias = results[0].get("Alias")
+	if not alias:
+		raise Exception(f"New-MailContact did not return an Alias: {list(results[0].keys())}")
+	return alias
+
+
+def set_mail_contact_rich_fields(tenant, identity: str, contact_data: dict):
+	"""Apply rich properties (company, phone, address, etc.) to an existing
+	mail contact via Set-Contact. Does not wrap in retry — the delayed-batch
+	caller already waited for replication, so failures here are surprising and
+	should surface as real errors rather than silently retrying."""
+	rich_params = _build_set_contact_params(contact_data)
+	if not rich_params:
+		return
+	rich_params["Identity"] = identity
+	_invoke_command(tenant, "Set-Contact", rich_params)
 
 
 def update_mail_contact(tenant, identity: str, contact_data: dict):
@@ -182,21 +332,30 @@ def update_mail_contact(tenant, identity: str, contact_data: dict):
 
 
 def delete_mail_contact(tenant, identity: str):
-	"""Delete a mail contact from the GAL."""
-	_invoke_command(tenant, "Remove-MailContact", {
+	"""Delete a mail contact from the GAL. Uses the retry wrapper for resilience
+	against transient NotFound responses (can happen right after identity changes)."""
+	_invoke_with_retry(tenant, "Remove-MailContact", {
 		"Identity": identity,
 		"Confirm": False,
-	})
+	}, max_retries=3)
 
 
-def _invoke_with_retry(tenant, cmdlet_name: str, parameters: dict, max_retries: int = 5):
-	"""Invoke a command with retry for replication delays."""
+def _invoke_with_retry(tenant, cmdlet_name: str, parameters: dict, max_retries: int = 8):
+	"""Invoke a command with retry for replication delays.
+
+	Flat 1-second backoff × up to 8 attempts = max ~7 s of sleeps on top of
+	~1.5 s per Graph call. The anchor-mailbox fix eliminates most retries
+	(a Set-Contact right after New-MailContact should usually succeed on
+	attempt 1), but backends can still be eventually-consistent and some
+	requests hit an edge server that hasn't caught up — these retries keep
+	the worst case bounded to ~15 s instead of failing outright.
+	"""
 	for attempt in range(max_retries):
 		try:
 			return _invoke_command(tenant, cmdlet_name, parameters)
 		except Exception as e:
 			if attempt < max_retries - 1 and ("couldn't be found" in str(e) or "NotFound" in str(e)):
-				time.sleep(5 * (attempt + 1))
+				time.sleep(1)
 				continue
 			raise
 

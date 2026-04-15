@@ -15,6 +15,7 @@
   "client_id",
   "column_break_credentials",
   "client_secret",
+  "primary_domain",
   "section_break_notes",
   "notes"
  ],
@@ -79,6 +80,13 @@
    "fieldtype": "Password",
    "label": "Client Secret",
    "reqd": 1
+  },
+  {
+   "description": "Tenant's primary onmicrosoft.com domain (e.g. 'contoso.onmicrosoft.com'). Auto-resolved on first Exchange call and used in the X-AnchorMailbox header so Exchange Management calls hit the same backend (avoids NotFound retries).",
+   "fieldname": "primary_domain",
+   "fieldtype": "Data",
+   "label": "Primary Domain",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_notes",
