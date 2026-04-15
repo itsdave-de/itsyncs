@@ -11,6 +11,10 @@
   "column_break_header",
   "started_at",
   "completed_at",
+  "section_break_progress",
+  "progress_phase",
+  "progress_current",
+  "progress_total",
   "section_break_counts",
   "created_count",
   "updated_count",
@@ -59,6 +63,30 @@
    "fieldname": "completed_at",
    "fieldtype": "Datetime",
    "label": "Completed At"
+  },
+  {
+   "depends_on": "eval:doc.status=='Running' || doc.progress_current || doc.progress_total",
+   "fieldname": "section_break_progress",
+   "fieldtype": "Section Break",
+   "label": "Progress"
+  },
+  {
+   "fieldname": "progress_phase",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Phase"
+  },
+  {
+   "default": "0",
+   "fieldname": "progress_current",
+   "fieldtype": "Int",
+   "label": "Progress Current"
+  },
+  {
+   "default": "0",
+   "fieldname": "progress_total",
+   "fieldtype": "Int",
+   "label": "Progress Total"
   },
   {
    "fieldname": "section_break_counts",

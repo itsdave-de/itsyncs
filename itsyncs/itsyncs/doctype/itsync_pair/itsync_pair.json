@@ -12,9 +12,11 @@
   "status",
   "last_run",
   "last_run_log",
+  "current_job_id",
   "section_break_schedule",
   "schedule",
   "enabled",
+  "job_timeout",
   "column_break_schedule",
   "initial_sync_complete",
   "section_break_behavior",
@@ -83,6 +85,13 @@
    "read_only": 1
   },
   {
+   "fieldname": "current_job_id",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Current Job ID",
+   "read_only": 1
+  },
+  {
    "fieldname": "section_break_schedule",
    "fieldtype": "Section Break",
    "label": "Schedule"
@@ -100,6 +109,14 @@
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Auto Sync Enabled"
+  },
+  {
+   "default": "3600",
+   "description": "Maximum seconds the sync job may run before RQ kills it. Increase for very large initial syncs.",
+   "fieldname": "job_timeout",
+   "fieldtype": "Int",
+   "label": "Job Timeout (s)",
+   "non_negative": 1
   },
   {
    "fieldname": "column_break_schedule",

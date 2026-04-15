@@ -10,13 +10,115 @@ SCHEDULE_MINUTES = {
 	"Daily": 1440,
 }
 
+HEARTBEAT_GRACE_SECONDS = 120
+
 
 def run_due_syncs():
-	"""Called by the scheduler. Checks all enabled pairs and enqueues due syncs."""
+	"""Scheduler entry point. Runs watchdog cleanup, then enqueues due syncs."""
+	_watchdog_cleanup()
+	_enqueue_due_syncs()
+
+
+def _watchdog_cleanup():
+	"""Reconcile 'Running' pairs against the actual RQ state.
+
+	Covers the case where the work-horse was killed (SIGKILL) and neither the
+	finally-block nor the on_failure callback ran: the pair stays on 'Running'
+	forever. We compare Pair.current_job_id to RQ; if the job is gone, failed,
+	stopped, or its RQ heartbeat is stale, we mark the pair + log as failed.
+	"""
+	from frappe.utils.background_jobs import get_job, get_job_status
+	from rq.job import JobStatus
+
+	running = frappe.get_all(
+		"ITSync Pair",
+		filters={"status": "Running"},
+		fields=["name", "current_job_id", "last_run_log", "modified"],
+	)
+
+	if not running:
+		return
+
+	now = frappe.utils.now_datetime()
+
+	for pair in running:
+		reason = None
+
+		if not pair.current_job_id:
+			reason = "No current_job_id tracked — stale state"
+		else:
+			try:
+				rq_status = get_job_status(pair.current_job_id)
+				job = get_job(pair.current_job_id)
+			except Exception as e:
+				reason = f"Could not query RQ job status: {e}"
+				rq_status = None
+				job = None
+
+			if rq_status is None:
+				reason = f"RQ job '{pair.current_job_id}' is gone (expired or never enqueued)"
+			elif rq_status in (JobStatus.FAILED, JobStatus.STOPPED, JobStatus.CANCELED):
+				reason = f"RQ job ended with status '{rq_status}' without finalization"
+			elif rq_status == JobStatus.STARTED and job is not None:
+				heartbeat = getattr(job, "last_heartbeat", None)
+				if heartbeat:
+					try:
+						from frappe.utils import get_datetime
+
+						hb = get_datetime(heartbeat)
+						age = (now - hb).total_seconds()
+						if age > HEARTBEAT_GRACE_SECONDS:
+							reason = f"RQ heartbeat stale ({int(age)}s since last ping)"
+					except Exception:
+						pass
+
+		if reason:
+			_mark_pair_dead(pair.name, pair.last_run_log, reason)
+
+	frappe.db.commit()
+
+
+def _mark_pair_dead(pair_name, log_name, reason):
+	"""Mark a stale Running pair as Error, and its log as Failed."""
+	now = frappe.utils.now_datetime()
+	line = f"[{now.strftime('%H:%M:%S')}] WATCHDOG: {reason}"
+
+	if log_name and frappe.db.exists("ITSync Log", log_name):
+		log_status = frappe.db.get_value("ITSync Log", log_name, "status")
+		if log_status == "Running":
+			current = frappe.db.get_value("ITSync Log", log_name, "details") or ""
+			new_details = (current + "\n" + line)[-60000:]
+			frappe.db.set_value(
+				"ITSync Log",
+				log_name,
+				{
+					"status": "Failed",
+					"completed_at": now,
+					"details": new_details,
+					"progress_phase": "Failed (watchdog)",
+				},
+				update_modified=False,
+			)
+
+	frappe.db.set_value(
+		"ITSync Pair",
+		pair_name,
+		{"status": "Error", "current_job_id": "", "last_run": now},
+		update_modified=False,
+	)
+
+	frappe.publish_realtime(
+		"itsync_sync_complete",
+		{"pair": pair_name, "status": "Failed", "log": log_name, "reason": "watchdog"},
+	)
+
+
+def _enqueue_due_syncs():
+	"""Enqueue scheduled syncs for pairs whose schedule window has elapsed."""
 	pairs = frappe.get_all(
 		"ITSync Pair",
 		filters={"enabled": 1, "initial_sync_complete": 1, "status": ["!=", "Running"]},
-		fields=["name", "schedule", "last_run"],
+		fields=["name", "schedule", "last_run", "job_timeout"],
 	)
 
 	now = frappe.utils.now_datetime()
@@ -29,15 +131,34 @@ def run_due_syncs():
 			if diff < interval_minutes:
 				continue
 
-		frappe.db.set_value("ITSync Pair", pair.name, "status", "Running")
+		job_id = f"itsync_scheduled_{pair.name}"
+
+		log = frappe.new_doc("ITSync Log")
+		log.sync_pair = pair.name
+		log.sync_type = "Incremental"
+		log.started_at = now
+		log.status = "Running"
+		log.progress_phase = "Queued"
+		log.insert(ignore_permissions=True)
+
+		frappe.db.set_value(
+			"ITSync Pair",
+			pair.name,
+			{"status": "Running", "current_job_id": job_id, "last_run_log": log.name},
+			update_modified=False,
+		)
+		frappe.db.commit()
+
 		frappe.enqueue(
 			"itsyncs.sync.engine.run_sync",
 			pair_name=pair.name,
 			sync_type="Incremental",
+			log_name=log.name,
 			queue="default",
-			timeout=1800,
+			timeout=pair.job_timeout or 1800,
 			deduplicate=True,
-			job_id=f"itsync_scheduled_{pair.name}",
+			job_id=job_id,
+			on_failure="itsyncs.sync.engine.mark_sync_failed",
 		)
 
 	frappe.db.commit()
