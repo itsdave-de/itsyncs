@@ -733,6 +733,66 @@ class ITSyncPair(Document):
 		}
 
 	@frappe.whitelist()
+	def cleanup_duplicate_mappings(self):
+		"""Remove duplicate ITSync Mapping records, keeping only the newest per source_id.
+
+		Duplicates arise when a crashed initial sync leaves behind partial mappings
+		and subsequent runs create new ones for the same source contacts.
+		"""
+		# Use SQL to find duplicates — important because MariaDB's default
+		# collation (utf8mb4_general_ci) is case-insensitive, so two source_ids
+		# differing only in case are treated as duplicates by the DB but not by
+		# Python's dict lookup.
+		duplicates = frappe.db.sql("""
+			SELECT m.name, m.source_id, m.target_id, m.source_email, m.creation
+			FROM `tabITSync Mapping` m
+			INNER JOIN (
+				SELECT source_id, MAX(creation) AS max_creation
+				FROM `tabITSync Mapping`
+				WHERE sync_pair = %s
+				GROUP BY source_id
+				HAVING COUNT(*) > 1
+			) dups ON m.sync_pair = %s
+				AND m.source_id = dups.source_id
+				AND m.creation < dups.max_creation
+			ORDER BY m.creation
+		""", (self.name, self.name), as_dict=True)
+
+		# Build kept-lookup for reporting
+		kept_map = {}
+		for d in duplicates:
+			if d.source_id not in kept_map:
+				kept_row = frappe.db.get_value("ITSync Mapping",
+					{"sync_pair": self.name, "source_id": d.source_id},
+					["target_id"], as_dict=True, order_by="creation desc")
+				kept_map[d.source_id] = kept_row.target_id if kept_row else ""
+
+		to_delete = duplicates
+		total_kept = frappe.db.count("ITSync Mapping", {"sync_pair": self.name}) - len(to_delete)
+
+		if not to_delete:
+			total = frappe.db.count("ITSync Mapping", {"sync_pair": self.name})
+			return {"deleted": 0, "kept": total, "duplicates": []}
+
+		deleted_info = []
+		for m in to_delete:
+			deleted_info.append({
+				"source_email": m.source_email or "",
+				"old_target": m.target_id or "",
+				"kept_target": kept_map.get(m.source_id, ""),
+				"old_creation": str(m.creation),
+			})
+			frappe.delete_doc("ITSync Mapping", m.name, ignore_permissions=True)
+
+		frappe.db.commit()
+
+		return {
+			"deleted": len(to_delete),
+			"kept": total_kept,
+			"duplicates": deleted_info,
+		}
+
+	@frappe.whitelist()
 	def force_clean_stale(self):
 		"""Manually mark a stuck 'Running' pair as Error and its log as Failed.
 		Intended for the UI 'Force-clean' button when the watchdog hasn't run yet."""

@@ -121,6 +121,9 @@ function _itsync_rebuild_buttons(frm, live) {
 		frm.add_custom_button(__("Clean Up Test Contacts"), () => {
 			_itsync_cleanup_test_contacts(frm);
 		}, __("Diagnostics"));
+		frm.add_custom_button(__("Clean Up Duplicate Mappings"), () => {
+			_itsync_cleanup_duplicate_mappings(frm);
+		}, __("Diagnostics"));
 	}
 
 	if (is_inconsistent) {
@@ -452,6 +455,60 @@ function _itsync_run_preflight(frm) {
 	}).always(() => {
 		_itsync_start_polling(frm);
 	});
+}
+
+function _itsync_cleanup_duplicate_mappings(frm) {
+	frappe.confirm(
+		__("Scan all mappings for this pair and delete duplicates (keep the newest per source contact). Proceed?"),
+		() => {
+			setTimeout(() => {
+				_itsync_stop_polling(frm);
+				const dlg = new frappe.ui.Dialog({
+					title: __("Duplicate Mapping Cleanup"),
+					size: "large",
+					fields: [{fieldname: "html", fieldtype: "HTML"}],
+				});
+				dlg.get_field("html").$wrapper.html(`<div class="text-muted" style="padding: 10px;"><i class="fa fa-spinner fa-spin"></i> ${__("Scanning mappings…")}</div>`);
+				dlg.show();
+
+				frm.call({
+					method: "cleanup_duplicate_mappings",
+					doc: frm.doc,
+				}).then((r) => {
+					if (!r.message) return;
+					const d = r.message;
+					if (d.deleted === 0) {
+						dlg.get_field("html").$wrapper.html(`<div class="alert alert-success">${__("No duplicates found — all {0} mappings are unique.", [d.kept])}</div>`);
+						return;
+					}
+					const rows = d.duplicates.map((x, i) => `
+						<tr>
+							<td class="text-muted">${i + 1}</td>
+							<td>${frappe.utils.escape_html(x.source_email)}</td>
+							<td><code>${frappe.utils.escape_html(x.old_target)}</code></td>
+							<td><code>${frappe.utils.escape_html(x.kept_target)}</code></td>
+							<td><small>${frappe.utils.escape_html(x.old_creation)}</small></td>
+						</tr>
+					`).join("");
+					dlg.get_field("html").$wrapper.html(`
+						<div class="alert alert-success" style="margin-bottom: 10px;">${__("Deleted {0} duplicates, kept {1} unique mappings.", [d.deleted, d.kept])}</div>
+						<div style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e6e9; border-radius: 4px;">
+							<table class="table table-sm" style="margin: 0; font-size: 12px;">
+								<thead style="position: sticky; top: 0; background: #f5f7fa;">
+									<tr><th>#</th><th>${__("Email")}</th><th>${__("Deleted Target")}</th><th>${__("Kept Target")}</th><th>${__("Deleted Creation")}</th></tr>
+								</thead>
+								<tbody>${rows}</tbody>
+							</table>
+						</div>
+					`);
+				}).catch((e) => {
+					dlg.get_field("html").$wrapper.html(`<div class="alert alert-danger">${__("Cleanup failed")}: ${frappe.utils.escape_html(String(e && e.message || e))}</div>`);
+				}).always(() => {
+					_itsync_start_polling(frm);
+				});
+			}, 0);
+		}
+	);
 }
 
 function _itsync_show_smoke_test_dialog(frm) {

@@ -582,41 +582,79 @@ def _reconcile_unmapped(pair, source_conn, target_conn, source_client, target_cl
 				counts["skipped"] += 1
 		unmapped = eligible
 
+	if not unmapped:
+		_append_log_lines(log_name, [
+			f"[{_timestamp()}] Reconcile: no eligible unmapped contacts"
+			+ (f" ({skipped_ineligible} skipped, no valid email)" if skipped_ineligible else ""),
+		])
+		frappe.db.commit()
+		return
+
+	# Match unmapped contacts against the target before attempting to create.
+	# This catches contacts that ARE in the GAL but lost their mapping (e.g.
+	# after a duplicate-mapping cleanup) — they need a mapping, not a create.
+	_write_progress(log_name, 0, 0, "Reconcile: matching against target")
+	frappe.db.commit()
+	target_client = _get_client_for_connector(target_conn)
+	target_contacts = _fetch_target_contacts(target_client, target_conn, target_tenant)
+
+	already_in_target = []
+	to_create = []
+	for c in unmapped:
+		try:
+			m = find_match(c, target_contacts, pair.matching_strategy, pair.fuzzy_threshold or 0.85)
+		except Exception:
+			m = None
+		if m:
+			already_in_target.append((c, m["id"]))
+		else:
+			to_create.append(c)
+
 	_append_log_lines(log_name, [
-		f"[{_timestamp()}] Reconcile: {len(unmapped)} eligible unmapped contacts to create"
-		+ (f" ({skipped_ineligible} skipped, no valid email)" if skipped_ineligible else ""),
+		f"[{_timestamp()}] Reconcile: {len(unmapped)} eligible unmapped"
+		+ (f", {skipped_ineligible} skipped (no valid email)" if skipped_ineligible else "")
+		+ f" → {len(already_in_target)} matched in target (mapping only)"
+		+ f", {len(to_create)} to create",
 	])
 	frappe.db.commit()
 
-	if not unmapped:
-		return
+	# Record mappings for contacts already in the target (no API call needed)
+	for c, tid in already_in_target:
+		_create_mapping(pair.name, c, tid)
+		counts["skipped"] += 1
+	if already_in_target:
+		_append_log_lines(log_name, [
+			f"[{_timestamp()}] Reconcile: {len(already_in_target)} mappings restored (contacts already in target)",
+		])
+		frappe.db.commit()
 
-	# Create via delayed-batch (GAL) or single-call (Mailbox)
-	if target_is_gal:
-		_run_initial_gal_batched(
-			pair, target_tenant, unmapped,
-			counts, error_details, log_name,
-			total=len(unmapped), processed_start=0,
-		)
-	else:
-		target_folder = target_conn.contact_folder or None
-		for c in unmapped:
-			display = c.get("display_name") or get_primary_email(c) or "?"
-			try:
-				new_id = create_contact(target_tenant, target_conn.email_address, c, target_folder)
-				_create_mapping(pair.name, c, new_id)
-				counts["created"] += 1
-			except Exception as e:
-				counts["errors"] += 1
-				error_details.append({
-					"contact": c.get("display_name"),
-					"email": get_primary_email(c),
-					"stage": "reconcile",
-					"error": str(e),
-				})
+	# Create contacts that truly don't exist in the target yet
+	if to_create:
+		if target_is_gal:
+			_run_initial_gal_batched(
+				pair, target_tenant, to_create,
+				counts, error_details, log_name,
+				total=len(to_create), processed_start=0,
+			)
+		else:
+			target_folder = target_conn.contact_folder or None
+			for c in to_create:
+				display = c.get("display_name") or get_primary_email(c) or "?"
+				try:
+					new_id = create_contact(target_tenant, target_conn.email_address, c, target_folder)
+					_create_mapping(pair.name, c, new_id)
+					counts["created"] += 1
+				except Exception as e:
+					counts["errors"] += 1
+					error_details.append({
+						"contact": c.get("display_name"),
+						"email": get_primary_email(c),
+						"stage": "reconcile",
+						"error": str(e),
+					})
 
 	_append_log_lines(log_name, [
-		f"[{_timestamp()}] Reconcile done: {counts['created']} created, {counts['errors']} errors",
+		f"[{_timestamp()}] Reconcile done: {len(already_in_target)} restored, {counts['created']} created, {counts['errors']} errors",
 	])
 	frappe.db.commit()
 
@@ -816,17 +854,35 @@ def _fetch_target_contacts(client, target_conn, target_tenant):
 
 
 def _create_mapping(pair_name: str, source_contact: dict, target_id: str):
-	"""Create an ITSync Mapping record."""
-	mapping = frappe.new_doc("ITSync Mapping")
-	mapping.sync_pair = pair_name
-	mapping.source_id = source_contact["id"]
-	mapping.target_id = target_id
-	mapping.source_email = get_primary_email(source_contact)
-	mapping.display_name = source_contact.get("display_name")
-	mapping.field_hash = compute_field_hash(source_contact)
-	mapping.status = "Synced"
-	mapping.last_synced = frappe.utils.now_datetime()
-	mapping.insert(ignore_permissions=True)
+	"""Create or update an ITSync Mapping record.
+
+	Idempotent: if a mapping for (sync_pair, source_id) already exists, it
+	is updated in place rather than creating a duplicate. This prevents the
+	duplicate-mapping problem that occurred when a crashed initial sync left
+	behind partial mappings and the next run re-created them.
+	"""
+	source_id = source_contact["id"]
+	existing = frappe.db.get_value(
+		"ITSync Mapping",
+		{"sync_pair": pair_name, "source_id": source_id},
+		"name",
+	)
+	values = {
+		"target_id": target_id,
+		"source_email": get_primary_email(source_contact),
+		"display_name": source_contact.get("display_name"),
+		"field_hash": compute_field_hash(source_contact),
+		"status": "Synced",
+		"last_synced": frappe.utils.now_datetime(),
+	}
+	if existing:
+		frappe.db.set_value("ITSync Mapping", existing, values, update_modified=False)
+	else:
+		mapping = frappe.new_doc("ITSync Mapping")
+		mapping.sync_pair = pair_name
+		mapping.source_id = source_id
+		mapping.update(values)
+		mapping.insert(ignore_permissions=True)
 
 
 def _store_delta_tokens(source_conn, source_client):
