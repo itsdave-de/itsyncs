@@ -83,7 +83,7 @@ function _itsync_rebuild_buttons(frm, live) {
 			// call takes 5-30 s and we don't want concurrent get_live_status
 			// reloads racing with the preview's db writes.
 			_itsync_stop_polling(frm);
-			frm.call("generate_preview").finally(() => {
+			frm.call("generate_preview").always(() => {
 				frm.reload_doc();
 				_itsync_start_polling(frm);
 			});
@@ -111,6 +111,9 @@ function _itsync_rebuild_buttons(frm, live) {
 	if (!frm.is_new() && frm.doc.target) {
 		frm.add_custom_button(__("Show Target Contacts"), () => {
 			_itsync_show_target_contacts_dialog(frm);
+		}, __("Diagnostics"));
+		frm.add_custom_button(__("Preflight Check"), () => {
+			_itsync_run_preflight(frm);
 		}, __("Diagnostics"));
 		frm.add_custom_button(__("Run API Smoke Test"), () => {
 			_itsync_show_smoke_test_dialog(frm);
@@ -359,7 +362,94 @@ function _itsync_run_cleanup(frm) {
 		`);
 	}).catch((e) => {
 		$html.html(`<div class="alert alert-danger" style="margin: 10px 0;">${__("Cleanup failed")}: ${frappe.utils.escape_html(String(e && e.message || e))}</div>`);
-	}).finally(() => {
+	}).always(() => {
+		_itsync_start_polling(frm);
+	});
+}
+
+function _itsync_run_preflight(frm) {
+	_itsync_stop_polling(frm);
+
+	const dlg = new frappe.ui.Dialog({
+		title: __("Preflight Check: {0}", [frm.doc.title]),
+		size: "extra-large",
+		fields: [
+			{ fieldname: "status", fieldtype: "HTML" },
+			{ fieldname: "results", fieldtype: "HTML" },
+		],
+		primary_action_label: __("Download HTML Report"),
+		primary_action: () => {
+			if (!dlg._report_html) return;
+			const blob = new Blob([dlg._report_html], { type: "text/html;charset=utf-8" });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement("a");
+			a.href = url;
+			a.download = `preflight-${frm.doc.name}-${frappe.datetime.nowdate()}.html`;
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+		},
+	});
+	dlg.disable_primary_action();
+	dlg.get_field("status").$wrapper.html(`
+		<div class="text-muted" style="padding: 10px;">
+			<i class="fa fa-spinner fa-spin"></i>
+			${__("Fetching source + target contacts and analyzing data quality — may take 10–30 s…")}
+		</div>
+	`);
+	dlg.show();
+
+	frm.call({
+		method: "run_preflight_check",
+		doc: frm.doc,
+	}).then((r) => {
+		if (!r.message) return;
+		const data = r.message;
+		const s = data.summary;
+		dlg._report_html = data.html_report;
+		dlg.enable_primary_action();
+
+		// Render summary cards
+		const cards = Object.entries(s).map(([key, cat]) => {
+			const cls = key === "ok" ? "success" : key === "already_in_target" ? "info" : cat.count > 0 ? "danger" : "secondary";
+			return `<div style="display: inline-block; margin: 4px; padding: 8px 14px; border-radius: 6px; text-align: center; min-width: 100px; background: var(--bg-${cls === 'secondary' ? 'light-gray' : cls}, #f8f9fa); border: 1px solid #e2e6e9;">
+				<div style="font-size: 22px; font-weight: bold;">${cat.count}</div>
+				<div style="font-size: 11px; color: #666;">${cat.icon} ${frappe.utils.escape_html(cat.label)}</div>
+			</div>`;
+		}).join("");
+
+		dlg.get_field("status").$wrapper.html(`
+			<div style="margin-bottom: 10px;">
+				<strong>${__("Source")}: ${data.source_count}</strong> contacts &middot;
+				<strong>${__("Target")}: ${data.target_count}</strong> contacts
+			</div>
+			<div style="display: flex; flex-wrap: wrap; gap: 6px;">${cards}</div>
+		`);
+
+		// Render issue tables
+		const issueKeys = Object.entries(s).filter(([k, v]) => k !== "ok" && k !== "already_in_target" && v.count > 0);
+		if (issueKeys.length === 0) {
+			dlg.get_field("results").$wrapper.html(`
+				<div class="alert alert-success" style="margin-top: 10px;">${__("No issues found — all contacts are ready to sync.")}</div>
+			`);
+		} else {
+			// Embed the HTML report in an iframe for preview
+			dlg.get_field("results").$wrapper.html(`
+				<div style="margin-top: 10px; border: 1px solid #e2e6e9; border-radius: 4px; overflow: hidden;">
+					<iframe srcdoc="${frappe.utils.escape_html(data.html_report)}"
+						style="width: 100%; height: 500px; border: none;"></iframe>
+				</div>
+				<div class="text-muted" style="margin-top: 6px; font-size: 12px;">
+					${__("Full report preview. Click <b>Download HTML Report</b> to save for offline use or email to the customer.")}
+				</div>
+			`);
+		}
+	}).catch((e) => {
+		dlg.get_field("status").$wrapper.html(`
+			<div class="alert alert-danger">${__("Preflight check failed")}: ${frappe.utils.escape_html(String(e && e.message || e))}</div>
+		`);
+	}).always(() => {
 		_itsync_start_polling(frm);
 	});
 }
@@ -508,7 +598,7 @@ function _itsync_run_smoke_test(frm, dialog, values) {
 	}).catch((e) => {
 		dialog.enable_primary_action();
 		$status.html(`<div class="alert alert-danger">${__("Smoke test failed")}: ${frappe.utils.escape_html(String(e && e.message || e))}</div>`);
-	}).finally(() => {
+	}).always(() => {
 		// Restart polling after the test completes (success or failure)
 		_itsync_start_polling(frm);
 	});

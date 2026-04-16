@@ -225,6 +225,219 @@ class ITSyncPair(Document):
 		}
 
 	@frappe.whitelist()
+	def run_preflight_check(self):
+		"""Analyze source contacts for data-quality issues before syncing.
+
+		Returns structured results + a standalone HTML report suitable for
+		download and forwarding to the customer for remediation.
+		"""
+		from collections import Counter
+		from itsyncs.sync.engine import (
+			_fetch_source_contacts, _fetch_target_contacts,
+			_get_client_for_connector, _get_tenant_for_connector,
+		)
+		from itsyncs.sync.matching import get_primary_email, find_match
+
+		source_conn = frappe.get_doc("ITSync Connector", self.source)
+		target_conn = frappe.get_doc("ITSync Connector", self.target)
+		source_client = _get_client_for_connector(source_conn)
+		target_client = _get_client_for_connector(target_conn)
+		target_tenant = _get_tenant_for_connector(target_conn)
+
+		source_contacts = _fetch_source_contacts(source_client, source_conn)
+		target_contacts = _fetch_target_contacts(target_client, target_conn, target_tenant)
+
+		# Detect the tenant's own domains (emails on these can't be ExternalEmailAddress)
+		tenant_domains = set()
+		if target_conn.connector_type == "GAL" and target_tenant:
+			domain = getattr(target_tenant, "primary_domain", None)
+			if domain:
+				tenant_domains.add(domain.lower())
+				# Also add the vanity domain (everything after @ in primary_domain minus .onmicrosoft.com)
+				base = domain.lower().replace(".onmicrosoft.com", "")
+				if base:
+					tenant_domains.add(f"{base}.de")
+					tenant_domains.add(f"{base}.com")
+
+		# Build lookup structures
+		name_counts = Counter(c.get("display_name", "") for c in source_contacts)
+		email_counts = Counter()
+		for c in source_contacts:
+			e = get_primary_email(c)
+			if e:
+				email_counts[e.lower()] += 1
+
+		target_emails = set()
+		for tc in target_contacts:
+			for ea in (tc.get("email_addresses") or []):
+				addr = (ea.get("address") or "").lower()
+				if addr:
+					target_emails.add(addr)
+
+		# Categorize
+		categories = {
+			"no_email": {"label": "No email address", "icon": "⛔", "contacts": [],
+				"description": "Contact has no email — cannot create a GAL MailContact."},
+			"invalid_email": {"label": "Invalid email (not SMTP)", "icon": "⚠️", "contacts": [],
+				"description": "The email field contains a name or text instead of a valid SMTP address."},
+			"duplicate_name": {"label": "Duplicate display name", "icon": "👥", "contacts": [],
+				"description": "Multiple source contacts share the same display name. Exchange requires unique names for MailContacts."},
+			"duplicate_email": {"label": "Duplicate email address", "icon": "📧", "contacts": [],
+				"description": "Multiple source contacts share the same email. Only one can be created as a GAL MailContact."},
+			"internal_domain": {"label": "Internal email domain", "icon": "🏠", "contacts": [],
+				"description": "Email is on the tenant's own domain — Exchange rejects these as ExternalEmailAddress."},
+			"already_in_target": {"label": "Already in target (info)", "icon": "✅", "contacts": [],
+				"description": "Contact email already exists in the target. Will be matched, not created."},
+			"ok": {"label": "Ready to sync", "icon": "✔️", "contacts": [],
+				"description": "No issues detected — contact should sync without problems."},
+		}
+
+		for sc in source_contacts:
+			email = get_primary_email(sc)
+			display = sc.get("display_name") or ""
+			row = {
+				"display_name": display,
+				"email": email or "",
+				"given_name": sc.get("given_name") or "",
+				"surname": sc.get("surname") or "",
+				"company": sc.get("company_name") or "",
+			}
+
+			if not email:
+				categories["no_email"]["contacts"].append(row)
+			elif "@" not in email:
+				categories["invalid_email"]["contacts"].append(row)
+			elif tenant_domains and any(email.lower().endswith(f"@{d}") for d in tenant_domains):
+				categories["internal_domain"]["contacts"].append(row)
+			elif name_counts.get(display, 0) > 1:
+				row["duplicate_count"] = name_counts[display]
+				categories["duplicate_name"]["contacts"].append(row)
+			elif email_counts.get(email.lower(), 0) > 1:
+				row["duplicate_count"] = email_counts[email.lower()]
+				categories["duplicate_email"]["contacts"].append(row)
+			elif email.lower() in target_emails:
+				categories["already_in_target"]["contacts"].append(row)
+			else:
+				categories["ok"]["contacts"].append(row)
+
+		# Build summary
+		summary = {}
+		for key, cat in categories.items():
+			summary[key] = {
+				"label": cat["label"],
+				"icon": cat["icon"],
+				"count": len(cat["contacts"]),
+				"description": cat["description"],
+			}
+
+		# Generate standalone HTML report
+		html = self._build_preflight_html(source_conn.name, target_conn.name,
+										   len(source_contacts), len(target_contacts),
+										   categories, summary)
+
+		return {
+			"source_count": len(source_contacts),
+			"target_count": len(target_contacts),
+			"summary": summary,
+			"html_report": html,
+		}
+
+	def _build_preflight_html(self, source_name, target_name, source_count, target_count, categories, summary):
+		"""Build a standalone HTML report for the preflight check."""
+		now = frappe.utils.now_datetime().strftime("%Y-%m-%d %H:%M")
+
+		issue_cats = [k for k in categories if k not in ("ok", "already_in_target") and categories[k]["contacts"]]
+		info_cats = [k for k in ("already_in_target",) if categories[k]["contacts"]]
+		ok_count = len(categories["ok"]["contacts"])
+		issue_count = sum(len(categories[k]["contacts"]) for k in issue_cats)
+
+		def _table(contacts, extra_cols=None):
+			extra_cols = extra_cols or []
+			header = "<tr><th>#</th><th>Display Name</th><th>Email</th><th>Company</th>"
+			for col in extra_cols:
+				header += f"<th>{col}</th>"
+			header += "</tr>"
+			rows = ""
+			for i, c in enumerate(contacts, 1):
+				rows += f"<tr><td>{i}</td><td>{_esc(c['display_name'])}</td>"
+				rows += f"<td><code>{_esc(c['email'])}</code></td>"
+				rows += f"<td>{_esc(c['company'])}</td>"
+				for col in extra_cols:
+					rows += f"<td>{_esc(str(c.get(col.lower().replace(' ', '_'), '')))}</td>"
+				rows += "</tr>"
+			return f"<table>{header}{rows}</table>"
+
+		def _esc(s):
+			return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+		sections = ""
+		for key in issue_cats + info_cats:
+			cat = categories[key]
+			s = summary[key]
+			cls = "issue" if key not in ("already_in_target",) else "info"
+			extra = ["Duplicate Count"] if "duplicate" in key else []
+			sections += f"""
+			<div class="section {cls}">
+				<h3>{s['icon']} {_esc(s['label'])} ({s['count']})</h3>
+				<p class="desc">{_esc(s['description'])}</p>
+				{_table(cat['contacts'], extra)}
+			</div>"""
+
+		html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ITSync Preflight Report — {_esc(self.title)}</title>
+<style>
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+         max-width: 1100px; margin: 20px auto; padding: 0 20px; color: #333; }}
+  h1 {{ border-bottom: 2px solid #2490ef; padding-bottom: 8px; }}
+  .meta {{ color: #666; margin-bottom: 20px; }}
+  .summary {{ display: flex; gap: 12px; flex-wrap: wrap; margin: 20px 0; }}
+  .summary .card {{ background: #f8f9fa; border: 1px solid #e2e6e9; border-radius: 6px;
+                    padding: 12px 16px; min-width: 140px; text-align: center; }}
+  .summary .card.problem {{ border-left: 4px solid #e74c3c; }}
+  .summary .card.ok {{ border-left: 4px solid #27ae60; }}
+  .summary .card.info {{ border-left: 4px solid #2490ef; }}
+  .summary .card .num {{ font-size: 28px; font-weight: bold; }}
+  .summary .card .label {{ font-size: 12px; color: #666; }}
+  .section {{ margin: 30px 0; }}
+  .section.issue h3 {{ color: #e74c3c; }}
+  .section.info h3 {{ color: #2490ef; }}
+  .desc {{ color: #666; font-style: italic; margin: 4px 0 12px; }}
+  table {{ border-collapse: collapse; width: 100%; font-size: 13px; }}
+  th {{ background: #f5f7fa; text-align: left; padding: 6px 10px; border-bottom: 2px solid #ddd; }}
+  td {{ padding: 5px 10px; border-bottom: 1px solid #eee; }}
+  tr:hover {{ background: #fafbfc; }}
+  code {{ background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-size: 12px; }}
+  .footer {{ margin-top: 40px; padding-top: 10px; border-top: 1px solid #eee; color: #999; font-size: 12px; }}
+</style>
+</head>
+<body>
+<h1>ITSync Preflight Report</h1>
+<div class="meta">
+  Pair: <strong>{_esc(self.title)}</strong> &middot;
+  Source: <strong>{_esc(source_name)}</strong> ({source_count} contacts) &middot;
+  Target: <strong>{_esc(target_name)}</strong> ({target_count} contacts) &middot;
+  Generated: {now}
+</div>
+
+<div class="summary">
+  <div class="card ok"><div class="num">{ok_count}</div><div class="label">Ready to sync</div></div>
+  <div class="card problem"><div class="num">{issue_count}</div><div class="label">Issues found</div></div>
+  <div class="card info"><div class="num">{len(categories['already_in_target']['contacts'])}</div><div class="label">Already in target</div></div>
+</div>
+
+{sections}
+
+<div class="footer">
+  Generated by itsyncs &middot; {now}
+</div>
+</body>
+</html>"""
+		return html
+
+	@frappe.whitelist()
 	def run_api_smoke_test(self, count=3, mode="serial", batch_wait=15):
 		"""Create, update, and delete N test contacts against the target connector.
 
