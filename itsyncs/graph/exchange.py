@@ -178,11 +178,23 @@ def _invoke_command(tenant, cmdlet_name: str, parameters: dict) -> list[dict]:
 
 		# success
 		data = resp.json()
-		# Warnings from Exchange (pagination hints, throttle info, etc.) are
-		# informational — do NOT route through frappe.log_error because that
-		# pops a toast for every System Manager. Drop them silently; callers
-		# that truly need them can check the response directly.
-		return data.get("value", [])
+		results = data.get("value", [])
+
+		# Follow pagination if Exchange returned a nextLink.
+		# The adminapi defaults to 1000 per page even with ResultSize=Unlimited.
+		next_link = data.get("@odata.nextLink")
+		while next_link:
+			try:
+				page_resp = httpx.post(next_link, headers=headers, json={}, timeout=30)
+			except httpx.ReadTimeout:
+				break  # partial results are better than none
+			if page_resp.status_code != 200:
+				break
+			page_data = page_resp.json()
+			results.extend(page_data.get("value", []))
+			next_link = page_data.get("@odata.nextLink")
+
+		return results
 
 	# Defensive: loop should always either return or raise
 	if last_exc:
