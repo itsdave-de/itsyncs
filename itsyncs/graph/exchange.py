@@ -178,23 +178,7 @@ def _invoke_command(tenant, cmdlet_name: str, parameters: dict) -> list[dict]:
 
 		# success
 		data = resp.json()
-		results = data.get("value", [])
-
-		# Follow pagination if Exchange returned a nextLink.
-		# The adminapi defaults to 1000 per page even with ResultSize=Unlimited.
-		next_link = data.get("@odata.nextLink")
-		while next_link:
-			try:
-				page_resp = httpx.post(next_link, headers=headers, json={}, timeout=30)
-			except httpx.ReadTimeout:
-				break  # partial results are better than none
-			if page_resp.status_code != 200:
-				break
-			page_data = page_resp.json()
-			results.extend(page_data.get("value", []))
-			next_link = page_data.get("@odata.nextLink")
-
-		return results
+		return data.get("value", [])
 
 	# Defensive: loop should always either return or raise
 	if last_exc:
@@ -202,13 +186,71 @@ def _invoke_command(tenant, cmdlet_name: str, parameters: dict) -> list[dict]:
 	raise Exception(f"Exchange {cmdlet_name}: unreachable")
 
 
+def _invoke_command_all(tenant, cmdlet_name: str, parameters: dict) -> list[dict]:
+	"""Fetch all results for a Get-* cmdlet, working around the 1000-per-page
+	hard limit on the InvokeCommand endpoint.
+
+	Strategy: issue one normal call. If exactly 1000 results come back (= the
+	server truncated), split into alphabetic halves by DisplayName and recurse.
+	This typically needs 3–5 API calls for ~2000 contacts — much cheaper than
+	26 per-letter calls.
+	"""
+	results = _invoke_command(tenant, cmdlet_name, {**parameters, "ResultSize": "Unlimited"})
+	if len(results) < 1000:
+		return results
+
+	# Hit the 1000-cap. Split alphabetically.
+	return _invoke_command_split(tenant, cmdlet_name, parameters, filter_expr=None, depth=0)
+
+
+def _invoke_command_split(tenant, cmdlet_name, parameters, filter_expr, depth):
+	"""Recursively split a Get-* cmdlet call into alphabetic sub-ranges until
+	each sub-range returns <1000 results."""
+	params = {**parameters, "ResultSize": "Unlimited"}
+	if filter_expr:
+		params["Filter"] = filter_expr
+
+	results = _invoke_command(tenant, cmdlet_name, params)
+
+	if len(results) < 1000 or depth > 5:
+		# Under the limit, or we've split deep enough — accept what we have
+		return results
+
+	# Find the midpoint letter from the results
+	names = sorted(r.get("DisplayName") or "" for r in results)
+	mid_name = names[len(names) // 2]
+	mid_char = mid_name[0].upper() if mid_name else "M"
+
+	# Build sub-filters
+	if filter_expr and "-and" not in filter_expr and "-ge" in filter_expr:
+		# Existing lower bound — add upper bound for left half
+		left_filter = f"{filter_expr} -and DisplayName -lt '{mid_char}'"
+		right_filter = f"DisplayName -ge '{mid_char}'"
+		# Preserve any original upper bound
+		if "-lt" in filter_expr:
+			parts = filter_expr.split("-lt")
+			right_filter += f" -and DisplayName -lt{parts[-1]}"
+	elif filter_expr and "-lt" in filter_expr and "-ge" not in filter_expr:
+		# Existing upper bound only
+		left_filter = f"DisplayName -lt '{mid_char}'"
+		right_filter = f"DisplayName -ge '{mid_char}' -and {filter_expr}"
+	else:
+		left_filter = f"DisplayName -lt '{mid_char}'"
+		right_filter = f"DisplayName -ge '{mid_char}'"
+
+	left = _invoke_command_split(tenant, cmdlet_name, parameters, left_filter, depth + 1)
+	right = _invoke_command_split(tenant, cmdlet_name, parameters, right_filter, depth + 1)
+	return left + right
+
+
 def fetch_all_mail_contacts(tenant) -> list[dict]:
 	"""Fetch all mail contacts from Exchange Online. Returns normalized contact dicts.
 
 	Merges data from Get-MailContact (email, alias) and Get-Contact (rich fields).
+	Uses _invoke_command_all to handle the 1000-per-page limit transparently.
 	"""
-	mail_contacts = _invoke_command(tenant, "Get-MailContact", {"ResultSize": "Unlimited"})
-	rich_contacts = _invoke_command(tenant, "Get-Contact", {"ResultSize": "Unlimited"})
+	mail_contacts = _invoke_command_all(tenant, "Get-MailContact", {})
+	rich_contacts = _invoke_command_all(tenant, "Get-Contact", {})
 
 	# Index rich contact data by Identity for fast lookup
 	rich_by_identity = {}
