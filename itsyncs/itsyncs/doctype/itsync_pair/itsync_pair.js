@@ -399,7 +399,7 @@ function _itsync_run_preflight(frm) {
 	dlg.get_field("status").$wrapper.html(`
 		<div class="text-muted" style="padding: 10px;">
 			<i class="fa fa-spinner fa-spin"></i>
-			${__("Fetching source + target contacts and analyzing data quality — may take 1–2 minutes…")}
+			${__("Fetching source + target contacts and analyzing data quality — may take 1–2 minutes depending on the number of contacts. For very large datasets (5000+) a timeout may occur; in that case, run the check via the server console instead.")}
 		</div>
 	`);
 	dlg.show();
