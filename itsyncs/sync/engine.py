@@ -35,6 +35,22 @@ GAL_BATCH_CHUNK_SIZE = 50
 GAL_BATCH_WAIT_SECONDS = 15
 
 
+def _is_gal_eligible(contact):
+	"""Check if a contact has the minimum data needed for a GAL MailContact.
+
+	Returns (True, None) if eligible, or (False, reason_string) if not.
+	Contacts without a valid SMTP email address cannot be created as Exchange
+	MailContacts — they should be skipped rather than sent to the API (where
+	they'd waste ~3 s on a guaranteed failure).
+	"""
+	email = get_primary_email(contact)
+	if not email:
+		return False, "no email address"
+	if "@" not in email:
+		return False, f"invalid email (not SMTP): {email}"
+	return True, None
+
+
 def _get_client_for_connector(connector):
 	"""Create the appropriate API client for a connector, or None for Sage SQL."""
 	if connector.connector_type == "Sage SQL":
@@ -338,8 +354,24 @@ def _run_initial_sync(pair, source_conn, target_conn, source_client, target_clie
 		else:
 			to_create.append(sc)
 
+	# Pre-filter: skip contacts that can't become GAL entries (no email, non-SMTP)
+	target_is_gal = target_conn.connector_type == "GAL"
+	ineligible_count = 0
+	if target_is_gal and to_create:
+		eligible = []
+		for sc in to_create:
+			ok, reason = _is_gal_eligible(sc)
+			if ok:
+				eligible.append(sc)
+			else:
+				ineligible_count += 1
+				counts["skipped"] += 1
+		to_create = eligible
+
 	_append_log_lines(log_name, [
-		f"[{_timestamp()}] Split: {len(matches)} already matched, {len(to_create)} to create, {match_errors} match errors",
+		f"[{_timestamp()}] Split: {len(matches)} already matched, {len(to_create)} to create"
+		+ (f", {ineligible_count} skipped (no valid email)" if ineligible_count else "")
+		+ (f", {match_errors} match errors" if match_errors else ""),
 	])
 	frappe.db.commit()
 
@@ -373,8 +405,6 @@ def _run_initial_sync(pair, source_conn, target_conn, source_client, target_clie
 	frappe.db.commit()
 
 	# Step 3: create missing contacts
-	target_is_gal = target_conn.connector_type == "GAL"
-
 	if target_is_gal:
 		_run_initial_gal_batched(
 			pair, target_tenant, to_create, counts, error_details, log_name,
@@ -505,8 +535,105 @@ def _run_initial_gal_batched(pair, tenant, to_create, counts, error_details, log
 		frappe.db.commit()
 
 
+def _reconcile_unmapped(pair, source_conn, target_conn, source_client, target_client, target_tenant, counts, error_details, log_name):
+	"""Find source contacts without a mapping and create them in the target.
+
+	Runs at the start of every incremental sync. Catches:
+	  - Transient failures from the initial sync (Exchange 500s, timeouts)
+	  - Contacts added to the source between syncs
+	  - Contacts whose data was corrected (e.g. email added) since last run
+
+	Cost when everything is clean: one source-fetch (needed anyway for delta) +
+	one DB query on ITSync Mapping ≈ 0–2 s. Only triggers Graph API calls when
+	there are actual unmapped contacts with valid emails.
+	"""
+	_write_progress(log_name, 0, 0, "Reconcile: checking for unmapped contacts")
+	frappe.db.commit()
+
+	source_contacts = _fetch_source_contacts(source_client, source_conn)
+	mapped_ids = set(frappe.get_all(
+		"ITSync Mapping",
+		filters={"sync_pair": pair.name},
+		fields=["source_id"],
+		pluck="source_id",
+	))
+
+	unmapped = [c for c in source_contacts if c.get("id") not in mapped_ids]
+
+	if not unmapped:
+		_append_log_lines(log_name, [
+			f"[{_timestamp()}] Reconcile: all {len(source_contacts)} source contacts mapped — nothing to do",
+		])
+		frappe.db.commit()
+		return
+
+	target_is_gal = target_conn.connector_type == "GAL"
+
+	# Pre-filter for GAL eligibility
+	skipped_ineligible = 0
+	if target_is_gal:
+		eligible = []
+		for c in unmapped:
+			ok, reason = _is_gal_eligible(c)
+			if ok:
+				eligible.append(c)
+			else:
+				skipped_ineligible += 1
+				counts["skipped"] += 1
+		unmapped = eligible
+
+	_append_log_lines(log_name, [
+		f"[{_timestamp()}] Reconcile: {len(unmapped)} eligible unmapped contacts to create"
+		+ (f" ({skipped_ineligible} skipped, no valid email)" if skipped_ineligible else ""),
+	])
+	frappe.db.commit()
+
+	if not unmapped:
+		return
+
+	# Create via delayed-batch (GAL) or single-call (Mailbox)
+	if target_is_gal:
+		_run_initial_gal_batched(
+			pair, target_tenant, unmapped,
+			counts, error_details, log_name,
+			total=len(unmapped), processed_start=0,
+		)
+	else:
+		target_folder = target_conn.contact_folder or None
+		for c in unmapped:
+			display = c.get("display_name") or get_primary_email(c) or "?"
+			try:
+				new_id = create_contact(target_tenant, target_conn.email_address, c, target_folder)
+				_create_mapping(pair.name, c, new_id)
+				counts["created"] += 1
+			except Exception as e:
+				counts["errors"] += 1
+				error_details.append({
+					"contact": c.get("display_name"),
+					"email": get_primary_email(c),
+					"stage": "reconcile",
+					"error": str(e),
+				})
+
+	_append_log_lines(log_name, [
+		f"[{_timestamp()}] Reconcile done: {counts['created']} created, {counts['errors']} errors",
+	])
+	frappe.db.commit()
+
+
 def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_client, target_tenant, counts, error_details, log_name):
-	"""Incremental sync using delta queries."""
+	"""Incremental sync using delta queries.
+
+	Starts with a reconciliation step that catches up any source contacts that
+	are not yet mapped (failed during initial sync, added between syncs, or
+	whose data was corrected since the last run). Then processes the normal
+	delta (changed + deleted contacts).
+	"""
+	# Step 0: Reconcile unmapped source contacts
+	_reconcile_unmapped(pair, source_conn, target_conn, source_client,
+						target_client, target_tenant, counts, error_details, log_name)
+
+	# Step 1: Delta sync
 	_write_progress(log_name, 0, 0, "Fetching delta from source")
 	frappe.db.commit()
 
