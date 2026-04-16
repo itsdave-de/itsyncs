@@ -246,7 +246,7 @@ function _itsync_load_target_contacts(frm, dialog) {
 	const $list = dialog.get_field("list_html").$wrapper;
 	$info.html('<div class="text-muted" style="padding: 10px;">'
 		+ '<i class="fa fa-spinner fa-spin"></i> '
-		+ __("Fetching from Exchange — may take 10–30 s for large tenants…")
+		+ __("Fetching from Exchange — may take 1–2 minutes for large tenants…")
 		+ '</div>');
 	$list.empty();
 
@@ -322,7 +322,7 @@ function _itsync_run_cleanup(frm) {
 	const $html = dlg.get_field("html").$wrapper;
 	$html.html(`<div class="text-muted" style="padding: 10px;">
 		<i class="fa fa-spinner fa-spin"></i>
-		${__("Scanning target GAL and deleting test contacts… may take 10–30 s.")}
+		${__("Scanning target GAL and deleting test contacts… may take 1–2 minutes.")}
 	</div>`);
 	dlg.show();
 
@@ -387,7 +387,8 @@ function _itsync_run_preflight(frm) {
 			const url = URL.createObjectURL(blob);
 			const a = document.createElement("a");
 			a.href = url;
-			a.download = `preflight-${frm.doc.name}-${frappe.datetime.nowdate()}.html`;
+			const safeName = (frm.doc.title || frm.doc.name).replace(/[^a-zA-Z0-9_-]/g, "_");
+			a.download = `preflight-${safeName}-${frappe.datetime.nowdate()}.html`;
 			document.body.appendChild(a);
 			a.click();
 			document.body.removeChild(a);
@@ -398,7 +399,7 @@ function _itsync_run_preflight(frm) {
 	dlg.get_field("status").$wrapper.html(`
 		<div class="text-muted" style="padding: 10px;">
 			<i class="fa fa-spinner fa-spin"></i>
-			${__("Fetching source + target contacts and analyzing data quality — may take 10–30 s…")}
+			${__("Fetching source + target contacts and analyzing data quality — may take 1–2 minutes…")}
 		</div>
 	`);
 	dlg.show();
@@ -444,7 +445,7 @@ function _itsync_run_preflight(frm) {
 						style="width: 100%; height: 500px; border: none;"></iframe>
 				</div>
 				<div class="text-muted" style="margin-top: 6px; font-size: 12px;">
-					${__("Full report preview. Click <b>Download HTML Report</b> to save for offline use or email to the customer.")}
+					${__("Full report preview. Click <b>Download HTML Report</b> to save for offline use or further analysis.")}
 				</div>
 			`);
 		}

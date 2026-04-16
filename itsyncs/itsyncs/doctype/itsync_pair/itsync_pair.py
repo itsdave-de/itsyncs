@@ -229,7 +229,7 @@ class ITSyncPair(Document):
 		"""Analyze source contacts for data-quality issues before syncing.
 
 		Returns structured results + a standalone HTML report suitable for
-		download and forwarding to the customer for remediation.
+		download and forwarding for review or remediation.
 		"""
 		from collections import Counter
 		from itsyncs.sync.engine import (
