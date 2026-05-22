@@ -739,10 +739,10 @@ class ITSyncPair(Document):
 		Duplicates arise when a crashed initial sync leaves behind partial mappings
 		and subsequent runs create new ones for the same source contacts.
 		"""
-		# Use SQL to find duplicates — important because MariaDB's default
-		# collation (utf8mb4_general_ci) is case-insensitive, so two source_ids
-		# differing only in case are treated as duplicates by the DB but not by
-		# Python's dict lookup.
+		# BINARY comparison throughout: Graph contact IDs are case-sensitive,
+		# but the column collation may be case-insensitive (utf8mb4_*_ci).
+		# Without BINARY, two contacts whose IDs differ only in letter case
+		# would be wrongly grouped and one deleted as a bogus "duplicate".
 		duplicates = frappe.db.sql("""
 			SELECT m.name, m.source_id, m.target_id, m.source_email, m.creation
 			FROM `tabITSync Mapping` m
@@ -750,10 +750,10 @@ class ITSyncPair(Document):
 				SELECT source_id, MAX(creation) AS max_creation
 				FROM `tabITSync Mapping`
 				WHERE sync_pair = %s
-				GROUP BY source_id
+				GROUP BY BINARY source_id
 				HAVING COUNT(*) > 1
 			) dups ON m.sync_pair = %s
-				AND m.source_id = dups.source_id
+				AND m.source_id = BINARY dups.source_id
 				AND m.creation < dups.max_creation
 			ORDER BY m.creation
 		""", (self.name, self.name), as_dict=True)

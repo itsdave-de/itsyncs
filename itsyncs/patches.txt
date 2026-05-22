@@ -5,3 +5,4 @@
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
 itsyncs.patches.v0_0_2.reconcile_stuck_running_states
+itsyncs.patches.v0_0_3.binary_collation_mapping_ids

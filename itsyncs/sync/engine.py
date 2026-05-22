@@ -726,11 +726,8 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 		processed += 1
 		display = contact.get("display_name") or get_primary_email(contact) or "?"
 		try:
-			mapping = frappe.db.get_value(
-				"ITSync Mapping",
-				{"sync_pair": pair.name, "source_id": contact["id"]},
-				["name", "target_id", "field_hash"],
-				as_dict=True,
+			mapping = _find_mapping(
+				pair.name, contact["id"], ["name", "target_id", "field_hash"],
 			)
 
 			new_hash = compute_field_hash(contact)
@@ -788,12 +785,7 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 		for source_id in deleted_ids:
 			processed += 1
 			try:
-				mapping = frappe.db.get_value(
-					"ITSync Mapping",
-					{"sync_pair": pair.name, "source_id": source_id},
-					["name", "target_id"],
-					as_dict=True,
-				)
+				mapping = _find_mapping(pair.name, source_id, ["name", "target_id"])
 				if mapping and mapping.target_id:
 					if target_is_gal:
 						delete_mail_contact(target_tenant, mapping.target_id)
@@ -815,11 +807,8 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 	else:
 		for source_id in deleted_ids:
 			processed += 1
-			mapping_name = frappe.db.get_value(
-				"ITSync Mapping",
-				{"sync_pair": pair.name, "source_id": source_id},
-				"name",
-			)
+			mapping_row = _find_mapping(pair.name, source_id, ["name"])
+			mapping_name = mapping_row["name"] if mapping_row else None
 			if mapping_name:
 				frappe.db.set_value("ITSync Mapping", mapping_name, "status", "Orphaned")
 				counts["skipped"] += 1
@@ -853,6 +842,27 @@ def _fetch_target_contacts(client, target_conn, target_tenant):
 	return []
 
 
+def _find_mapping(pair_name, source_id, fields):
+	"""Case-sensitive lookup of an ITSync Mapping by (sync_pair, source_id).
+
+	Microsoft Graph contact IDs are case-sensitive base64 tokens, but the
+	source_id column collation (utf8mb4_*_ci) compares text case-insensitively.
+	A plain frappe.db.get_value filter therefore matches a different contact
+	whose ID differs only in letter case, collapsing both onto one mapping row
+	— the affected contact never gets its own mapping and is re-created on
+	every sync. The BINARY cast forces a byte-exact comparison regardless of
+	column collation. Returns a frappe._dict of the requested fields, or None.
+	"""
+	columns = ", ".join(f"`{f}`" for f in fields)
+	rows = frappe.db.sql(
+		f"SELECT {columns} FROM `tabITSync Mapping` "
+		"WHERE sync_pair = %s AND source_id = BINARY %s LIMIT 1",
+		(pair_name, source_id),
+		as_dict=True,
+	)
+	return rows[0] if rows else None
+
+
 def _create_mapping(pair_name: str, source_contact: dict, target_id: str):
 	"""Create or update an ITSync Mapping record.
 
@@ -862,11 +872,8 @@ def _create_mapping(pair_name: str, source_contact: dict, target_id: str):
 	behind partial mappings and the next run re-created them.
 	"""
 	source_id = source_contact["id"]
-	existing = frappe.db.get_value(
-		"ITSync Mapping",
-		{"sync_pair": pair_name, "source_id": source_id},
-		"name",
-	)
+	existing_row = _find_mapping(pair_name, source_id, ["name"])
+	existing = existing_row["name"] if existing_row else None
 	values = {
 		"target_id": target_id,
 		"source_email": get_primary_email(source_contact),
