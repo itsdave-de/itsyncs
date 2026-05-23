@@ -202,6 +202,17 @@ _KIND_EXPLAIN = {
 		"Identity wird bei neuen Kontakten ab jetzt automatisch konstruiert; "
 		"bestehende mit dieser Markierung können nach einem Re-Sync verschwinden."
 	),
+	"InvalidEmailAddress": (
+		"Die hinterlegte E-Mail-Adresse enthält ungültige Zeichen oder ist syntaktisch "
+		"keine gültige SMTP-Adresse. Microsoft Exchange lehnt das Anlegen ab. "
+		"Im Quell-Adressbuch korrigieren (Sonderzeichen entfernen), dann das "
+		"Conflict-Mapping löschen für einen erneuten Versuch."
+	),
+	"SoftDeletedRecipient": (
+		"Die E-Mail-Adresse ist im Tenant durch einen gelöschten User-Account "
+		"reserviert (Soft-Delete-Zustand). Bis ein Exchange-Administrator den "
+		"alten Eintrag freigibt, kann hier kein neuer MailContact entstehen."
+	),
 }
 
 

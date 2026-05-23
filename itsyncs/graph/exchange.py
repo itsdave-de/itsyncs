@@ -74,6 +74,22 @@ def _classify_permanent_error(exc: Exception) -> "PermanentExchangeError | None"
 			"AmbiguousIdentity",
 			f"name '{identity}' matches multiple existing directory objects",
 		)
+	# Malformed SMTP — Exchange rejects the email syntactically. Won't fix on retry.
+	if "is not an SMTP e-mail address" in msg or "RecipientTaskException" in msg and "SMTP" in msg:
+		bad_m = re.search(r"external e-mail address ([^\s]+?) is not", msg)
+		bad = bad_m.group(1) if bad_m else "unknown"
+		return PermanentExchangeError(
+			"InvalidEmailAddress",
+			f"'{bad}' is not a valid SMTP address (likely typo/special characters in source)",
+		)
+	# Soft-deleted recipient holds the proxy address: Exchange can't return a fresh
+	# ExternalDirectoryObjectId because the slot is reserved. Won't resolve without
+	# tenant-admin cleanup of the soft-deleted user.
+	if "ExternalDirectoryObjectId was not returned" in msg:
+		return PermanentExchangeError(
+			"SoftDeletedRecipient",
+			"SMTP is reserved by a soft-deleted recipient; tenant admin must release it",
+		)
 	return None
 
 
