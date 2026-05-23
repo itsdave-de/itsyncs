@@ -1,0 +1,55 @@
+{
+ "actions": [],
+ "creation": "2026-05-23 23:30:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_cleanup",
+  "cleanup_logs_enabled",
+  "cleanup_logs_max_age_days"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_cleanup",
+   "fieldtype": "Section Break",
+   "label": "Log-Bereinigung"
+  },
+  {
+   "default": "0",
+   "description": "Wenn aktiv, löscht ein täglicher Cleanup-Job ITSync-Log-Einträge, die älter sind als die unten angegebene Anzahl Tage. Logs im Status 'Running' werden nie gelöscht.",
+   "fieldname": "cleanup_logs_enabled",
+   "fieldtype": "Check",
+   "label": "Cleanup alter Sync-Logs aktiv"
+  },
+  {
+   "default": "30",
+   "depends_on": "eval:doc.cleanup_logs_enabled",
+   "description": "Maximales Alter in Tagen. Logs, deren started_at älter ist, werden gelöscht.",
+   "fieldname": "cleanup_logs_max_age_days",
+   "fieldtype": "Int",
+   "label": "Max. Alter (Tage)",
+   "non_negative": 1
+  }
+ ],
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-05-23 23:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "itsyncs",
+ "name": "ITSync Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

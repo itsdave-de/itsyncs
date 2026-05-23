@@ -28,8 +28,7 @@ scheduler_events = {
 			"itsyncs.tasks.run_due_syncs"
 		],
 	},
+	"daily": [
+		"itsyncs.tasks.cleanup_old_logs",
+	],
 }
-
-# default_log_clearing_doctypes = {
-# 	"ITSync Log": 90
-# }

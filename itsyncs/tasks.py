@@ -162,3 +162,48 @@ def _enqueue_due_syncs():
 		)
 
 	frappe.db.commit()
+
+
+def cleanup_old_logs():
+	"""Delete ITSync Log entries older than the configured max age.
+
+	Runs daily via scheduler_events. Behaviour is controlled by the
+	'ITSync Settings' single doctype:
+
+	  - cleanup_logs_enabled (default 0): if 0, this function is a no-op.
+	  - cleanup_logs_max_age_days (default 30): logs whose started_at is
+	    older than (now - this many days) are removed.
+
+	Running logs (status='Running') are never deleted, even if they exceed
+	the age threshold — the watchdog in _watchdog_cleanup is responsible
+	for surfacing those before they could be removed here.
+	"""
+	settings = frappe.get_single("ITSync Settings")
+	if not settings.cleanup_logs_enabled:
+		return
+
+	days = int(settings.cleanup_logs_max_age_days or 30)
+	if days <= 0:
+		return
+
+	cutoff = frappe.utils.add_days(frappe.utils.now_datetime(), -days)
+	old_logs = frappe.get_all(
+		"ITSync Log",
+		filters={
+			"started_at": ["<", cutoff],
+			"status": ["!=", "Running"],
+		},
+		pluck="name",
+	)
+	if not old_logs:
+		return
+
+	# Bulk delete via DB to avoid per-doc overhead (ITSync Log has no
+	# on_trash hook, so a direct delete is safe and ~100× faster than
+	# frappe.delete_doc in a loop for large batches).
+	frappe.db.delete("ITSync Log", {"name": ["in", old_logs]})
+	frappe.db.commit()
+
+	frappe.logger("itsyncs").info(
+		f"cleanup_old_logs: removed {len(old_logs)} log entries older than {days} days"
+	)

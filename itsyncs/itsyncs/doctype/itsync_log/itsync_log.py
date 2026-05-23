@@ -50,6 +50,11 @@ def _build_report_html(log: "ITSyncLog") -> str:
 	# Counts box
 	counts_html = _render_counts(log)
 
+	# Action lists: what was created / updated during this run
+	# (queried from the mapping table; deleted entries are gone and only
+	# countable via the details text — see _parse_deleted_from_details).
+	actions_html = _build_action_lists(log)
+
 	# Conflicts sections
 	if by_kind:
 		conflict_html = []
@@ -146,6 +151,20 @@ def _build_report_html(log: "ITSyncLog") -> str:
   @media (max-width: 720px) {{
     .kind-info .kind-sections {{ grid-template-columns: 1fr; }}
   }}
+  details.action-list {{ margin: 0.6em 0 1em; border: 1px solid #d8dee5;
+                          border-radius: 4px; padding: 0.6em 0.9em; background: #fafbfc; }}
+  details.action-list[open] {{ background: #fff; }}
+  details.action-list summary {{ cursor: pointer; padding: 0.3em 0; font-size: 1em; }}
+  details.action-list summary strong {{ color: #2c5aa0; }}
+  details.action-list .action-count {{ color: #888; font-weight: normal; font-size: 0.9em; }}
+  details.action-list.created summary strong {{ color: #1b6e3d; }}
+  details.action-list.updated summary strong {{ color: #8a5500; }}
+  details.action-list.deleted summary strong {{ color: #8a2d2d; }}
+  table.action-table {{ width: 100%; border-collapse: collapse; margin: 0.5em 0; font-size: 0.92em; }}
+  table.action-table th, table.action-table td {{ text-align: left; padding: 0.35em 0.7em;
+                                                    border-bottom: 1px solid #eef0f3; }}
+  table.action-table th {{ color: #6a7280; font-weight: 600; }}
+  table.action-table tr:nth-child(even) td {{ background: #fafbfc; }}
   pre.details {{ background: #f5f7fa; padding: 0.8em 1em; border-radius: 4px;
                   max-height: 360px; overflow-y: auto; font-size: 0.85em;
                   font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }}
@@ -184,6 +203,8 @@ oder anderen Anwendungen nicht erscheint. Suchen Sie unten den Kontakt in der
 
 <h2>Zusammenfassung dieses Laufs</h2>
 {counts_html}
+
+{actions_html}
 
 <h2>Dauerhaft übersprungene Kontakte (Konflikte)</h2>
 <p class="muted">
@@ -232,6 +253,126 @@ oder anderen Anwendungen nicht erscheint. Suchen Sie unten den Kontakt in der
 
 </body>
 </html>"""
+
+
+_MAX_LIST_ROWS = 200
+_DELETED_RE = None  # lazy-initialised regex (built on first use)
+
+
+def _build_action_lists(log) -> str:
+	"""Build HTML sections for what this run created, updated and deleted.
+
+	created/updated come from the Mapping table (reliable for the most recent
+	run; older logs may show partial data if mappings were touched again later).
+	deleted is parsed from the log's details text — opaque source_id only,
+	since the mapping is gone by the time we'd want to read display_name.
+	"""
+	if not log.started_at:
+		return ""
+
+	window_end = log.completed_at or frappe.utils.now_datetime()
+
+	created = frappe.db.sql(
+		"""
+		SELECT display_name, source_email, creation
+		FROM `tabITSync Mapping`
+		WHERE sync_pair = %s
+		  AND status = "Synced"
+		  AND creation BETWEEN %s AND %s
+		ORDER BY creation ASC
+		LIMIT %s
+		""",
+		(log.sync_pair, log.started_at, window_end, _MAX_LIST_ROWS + 1),
+		as_dict=True,
+	)
+	updated = frappe.db.sql(
+		"""
+		SELECT display_name, source_email, last_synced
+		FROM `tabITSync Mapping`
+		WHERE sync_pair = %s
+		  AND status = "Synced"
+		  AND last_synced BETWEEN %s AND %s
+		  AND creation < %s
+		ORDER BY last_synced ASC
+		LIMIT %s
+		""",
+		(log.sync_pair, log.started_at, window_end, log.started_at, _MAX_LIST_ROWS + 1),
+		as_dict=True,
+	)
+
+	# Deleted: parse opaque source_ids from the details text (ring-buffered to
+	# 200 lines, so the list can be incomplete for very large runs).
+	global _DELETED_RE
+	if _DELETED_RE is None:
+		import re
+		_DELETED_RE = re.compile(r"deleted mapping for source_id (\S+)")
+	deleted_ids = _DELETED_RE.findall(log.details or "") if log.details else []
+
+	parts = []
+	if created or updated or deleted_ids:
+		parts.append("<h2>Was hat dieser Lauf geändert?</h2>")
+
+	if created:
+		parts.append(_render_action_list(
+			"Neu angelegt",
+			"created",
+			"Diese Kontakte sind beim ersten Mal im Ziel erschienen. Wer sie in Outlook gesucht hat, findet sie ab sofort.",
+			created,
+		))
+
+	if updated:
+		parts.append(_render_action_list(
+			"Aktualisiert",
+			"updated",
+			"An diesen Kontakten haben sich Felder geändert (z. B. Telefonnummer, Firma, E-Mail) — die Änderungen sind im Ziel angekommen.",
+			updated,
+		))
+
+	if deleted_ids:
+		count = len(deleted_ids)
+		note = (
+			"Bei jedem Lauf können Kontakte gelöscht werden, wenn die Quelle sie nicht "
+			"mehr enthält und das Pair auf <code>on_delete=Delete</code> steht. "
+			"Die konkreten Namen sind hier nicht mehr verfügbar — sehen Sie ggf. im "
+			"Detail-Protokoll am Ende dieses Berichts nach den entsprechenden Zeilen."
+		)
+		parts.append(
+			'<details class="action-list deleted" open>'
+			f'<summary><strong>Gelöscht</strong> <span class="action-count">({count})</span></summary>'
+			f'<p class="muted">{note}</p>'
+			'</details>'
+		)
+
+	return "\n".join(parts)
+
+
+def _render_action_list(label: str, css_class: str, intro: str, rows: list[dict]) -> str:
+	truncated = len(rows) > _MAX_LIST_ROWS
+	visible = rows[:_MAX_LIST_ROWS]
+	open_attr = " open" if len(rows) <= 25 else ""
+	html = [
+		f'<details class="action-list {css_class}"{open_attr}>',
+		f'<summary><strong>{escape_html(label)}</strong> '
+		f'<span class="action-count">({len(rows)})</span></summary>',
+		f'<p class="muted">{escape_html(intro)}</p>',
+		'<table class="action-table">',
+		'<tr><th>Kontakt</th><th>E-Mail</th></tr>',
+	]
+	for r in visible:
+		html.append(
+			"<tr>"
+			f"<td>{escape_html(r.get('display_name') or '')}</td>"
+			f"<td>{escape_html(r.get('source_email') or '')}</td>"
+			"</tr>"
+		)
+	html.append("</table>")
+	if truncated:
+		html.append(
+			f'<p class="muted">… {len(rows) - _MAX_LIST_ROWS} weitere ausgeblendet '
+			f'(nur die ersten {_MAX_LIST_ROWS} werden angezeigt).</p>'
+		)
+	html.append("</details>")
+	return "\n".join(html)
 
 
 def _render_counts(log) -> str:
