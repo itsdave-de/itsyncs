@@ -118,6 +118,34 @@ def _build_report_html(log: "ITSyncLog") -> str:
   table.conflicts code {{ font-size: 0.85em; background: transparent; padding: 0; }}
   .explain {{ background: #fff9ee; border-left: 4px solid #d99800; padding: 0.6em 1em;
               margin: 0.5em 0 0.8em; border-radius: 0 4px 4px 0; font-size: 0.95em; }}
+  .kind-info {{ margin: 0.5em 0 1em; }}
+  .kind-info .kind-title {{ margin: 0 0 0.6em; font-size: 1em; color: #6a4900;
+                            background: #fff5d6; padding: 0.4em 0.8em; border-radius: 4px;
+                            border-left: 3px solid #d99800; }}
+  .kind-info .kind-sections {{ display: grid; grid-template-columns: 1fr 1fr 1fr;
+                                gap: 0.7em; margin-bottom: 0.7em; }}
+  .kind-info .kind-block {{ padding: 0.6em 0.8em; border-radius: 4px;
+                             font-size: 0.9em; background: #f8fafb; }}
+  .kind-info .kind-block h4 {{ margin: 0 0 0.4em; font-size: 0.78em;
+                                color: #6a7280; text-transform: uppercase;
+                                letter-spacing: 0.05em; font-weight: 700; }}
+  .kind-info .kind-block p, .kind-info .kind-block ol {{ margin: 0; line-height: 1.45; }}
+  .kind-info .kind-block ol {{ padding-left: 1.2em; }}
+  .kind-info .kind-block ol li {{ margin-bottom: 0.35em; }}
+  .kind-info .kind-block.what    {{ background: #f0f6fd; border-left: 3px solid #4a90e2; }}
+  .kind-info .kind-block.impact  {{ background: #fff8ea; border-left: 3px solid #d99800; }}
+  .kind-info .kind-block.actions {{ background: #f0fbf4; border-left: 3px solid #2ea868; }}
+  .intro-box {{ background: #f0f6fd; border-left: 4px solid #4a90e2; padding: 0.9em 1.2em;
+                margin: 1em 0 1.5em; border-radius: 0 4px 4px 0; font-size: 0.95em; }}
+  .intro-box ul {{ margin: 0.5em 0 0; padding-left: 1.3em; }}
+  .tips-box {{ background: #f3f6f3; border: 1px solid #c8d6c8; padding: 1em 1.3em;
+                margin: 2em 0 1em; border-radius: 6px; font-size: 0.94em; }}
+  .tips-box h3 {{ margin-top: 0; color: #2c5a3a; }}
+  .tips-box ul {{ margin: 0; padding-left: 1.3em; }}
+  .tips-box li {{ margin-bottom: 0.5em; }}
+  @media (max-width: 720px) {{
+    .kind-info .kind-sections {{ grid-template-columns: 1fr; }}
+  }}
   pre.details {{ background: #f5f7fa; padding: 0.8em 1em; border-radius: 4px;
                   max-height: 360px; overflow-y: auto; font-size: 0.85em;
                   font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }}
@@ -132,6 +160,15 @@ def _build_report_html(log: "ITSyncLog") -> str:
 <body>
 
 <h1>Sync-Report</h1>
+
+<div class="intro-box">
+<strong>Wozu dieser Bericht?</strong><br>
+Er erklärt, was der letzte Sync-Lauf für diesen Pair gemacht hat — und vor allem,
+<strong>welche Kontakte bewusst übersprungen wurden</strong>. Das ist wichtig zu wissen,
+falls Sie einen Kontakt geändert haben und sich wundern, warum die Änderung in Outlook
+oder anderen Anwendungen nicht erscheint. Suchen Sie unten den Kontakt in der
+„Übersprungen"-Liste — daneben steht der Grund <em>und</em> was Sie ggf. tun können.
+</div>
 
 <div class="meta">
 <dl>
@@ -150,13 +187,41 @@ def _build_report_html(log: "ITSyncLog") -> str:
 
 <h2>Dauerhaft übersprungene Kontakte (Konflikte)</h2>
 <p class="muted">
-  Diese Kontakte werden bei jedem Sync absichtlich übersprungen — sie sind
-  im Microsoft 365-Verzeichnis nicht als externe Kontakte anlegbar, weil
-  die E-Mail-Adresse bereits einem anderen Recipient gehört oder der Name
-  mehrdeutig ist. Änderungen an diesen Quell-Kontakten (Telefon, Firma etc.)
-  werden <strong>nicht</strong> in die GAL übertragen, solange der Konflikt besteht.
+  Diese Kontakte werden bei jedem Sync bewusst übersprungen, weil ein
+  <em>strukturelles</em> Hindernis das Anlegen im Microsoft-365-Verzeichnis
+  verhindert. Das ist <strong>kein Sync-Bug</strong> — und auch nichts, was
+  durch häufigeres Syncen oder Wiederholungen verschwindet. Für jede
+  Konflikt-Art ist unten erklärt, was passiert ist, was es bedeutet, und
+  was — falls überhaupt — jemand tun kann.
 </p>
 {conflict_section}
+
+<div class="tips-box">
+<h3>Tipps aus der Praxis</h3>
+<ul>
+  <li><strong>Wenn eine Änderung an einem Kontakt nicht in Outlook erscheint:</strong>
+      zuerst hier nach dem Kontakt suchen. Wenn er als Konflikt gelistet ist, sind
+      die Änderungen an die GAL <em>nicht</em> übertragen worden — der Grund steht daneben.</li>
+  <li><strong>Conflict-Mappings sind „eingefroren":</strong> einmal markiert, werden sie
+      bei jedem Lauf übersprungen — auch wenn sich die Konflikt-Ursache aufgelöst hat.
+      Damit der Kontakt neu versucht wird, das Conflict-Mapping in
+      <code>ITSync Mapping</code> manuell löschen.</li>
+  <li><strong>Die Quell-Adresse ist oft die einfachere Korrektur:</strong> wenn ein
+      Konflikt mit einem internen Mitarbeiter passiert, liegt das meistens daran, dass
+      die Person im externen Adressbuch ohnehin nicht hingehört — sie steht über ihr
+      eigenes Konto schon in der GAL.</li>
+  <li><strong>Wenn die SMTP-Adresse vermutlich falsch ist:</strong> es gab Fälle, in denen
+      eine Adresse im Quell-Adressbuch eindeutig vergeben war (z. B. <code>r.brandau@</code>),
+      aber tatsächlich einer anderen Person gehört. Konflikt-Detail nennt das tatsächliche
+      Objekt — wenn das nicht zur Quell-Person passt, ist die Quell-Adresse falsch eingepflegt.</li>
+  <li><strong>Microsoft-Replikation kann verzögern:</strong> nach Änderungen am Tenant
+      (Konto-Löschung, Adressbuch-Bereinigung) ein paar Minuten warten, bevor das
+      Conflict-Mapping gelöscht wird. Sonst kann der Re-Try noch in den alten Konflikt laufen.</li>
+  <li><strong>Bei wiederholten transienten Fehlern</strong> (Status „Failed" / „Partial"
+      mit hohem <em>errors</em>-Count): meist Microsoft-throttling — der nächste Lauf
+      bügelt das aus. Bleibt der Zustand über mehrere Läufe, IT-Support kontaktieren.</li>
+</ul>
+</div>
 
 <h2>Detail-Protokoll (letzte 30 Zeilen)</h2>
 {details_html}
@@ -190,34 +255,97 @@ def _render_counts(log) -> str:
 	return "\n".join(parts)
 
 
-_KIND_EXPLAIN = {
-	"ProxyAddressExists": (
-		"Die E-Mail-Adresse gehört bereits einem anderen Verzeichnis-Objekt "
-		"(meist ein internes Postfach, ein Shared Mailbox oder ein eingeladener Gast). "
-		"Ein zusätzlicher MailContact mit derselben SMTP geht in Exchange nicht."
-	),
-	"AmbiguousIdentity": (
-		"Der angezeigte Name kommt im Verzeichnis mehrfach vor — Exchange kann den "
-		"neuen MailContact nicht eindeutig anlegen. Eine eindeutige interne "
-		"Identity wird bei neuen Kontakten ab jetzt automatisch konstruiert; "
-		"bestehende mit dieser Markierung können nach einem Re-Sync verschwinden."
-	),
-	"InvalidEmailAddress": (
-		"Die hinterlegte E-Mail-Adresse enthält ungültige Zeichen oder ist syntaktisch "
-		"keine gültige SMTP-Adresse. Microsoft Exchange lehnt das Anlegen ab. "
-		"Im Quell-Adressbuch korrigieren (Sonderzeichen entfernen), dann das "
-		"Conflict-Mapping löschen für einen erneuten Versuch."
-	),
-	"SoftDeletedRecipient": (
-		"Die E-Mail-Adresse ist im Tenant durch einen gelöschten User-Account "
-		"reserviert (Soft-Delete-Zustand). Bis ein Exchange-Administrator den "
-		"alten Eintrag freigibt, kann hier kein neuer MailContact entstehen."
-	),
+_KIND_INFO = {
+	"ProxyAddressExists": {
+		"title": "E-Mail-Adresse ist bereits im Tenant vergeben",
+		"what": (
+			"Die E-Mail-Adresse dieses Kontakts gehört bereits einem anderen Objekt im "
+			"Microsoft 365-Tenant — meistens einem internen Postfach (Mitarbeiter), einem "
+			"Shared Mailbox (z. B. <code>archiv@…</code>) oder einer Person, die bereits "
+			"als externer Gast eingeladen wurde."
+		),
+		"impact": (
+			"<strong>Das ist kein Fehler.</strong> Der Kontakt ist über diesen anderen Weg "
+			"in der GAL bereits präsent — Sie finden ihn in der Outlook-Adresssuche ganz "
+			"normal, nur nicht als separat gepflegten externen Kontakt. Änderungen, die Sie "
+			"jetzt am Quell-Kontakt vornehmen (Telefon, Firma etc.), wirken sich daher "
+			"<strong>nicht</strong> auf das, was in Outlook erscheint, aus."
+		),
+		"actions": [
+			"In den meisten Fällen: nichts tun. Die Person erreichen Sie über ihr eigenes Konto bzw. die Gast-Einladung.",
+			"Falls die E-Mail im Quell-Adressbuch falsch ist (Tippfehler — z. B. wenn Konflikt-Detail auf ein anderes Objekt zeigt als erwartet): im Adressbuch korrigieren, danach das Conflict-Mapping löschen.",
+			"Wenn der interne Mitarbeiter das Unternehmen verlässt und der Konflikt sich auflöst: Conflict-Mapping löschen — beim nächsten Sync wird der externe Eintrag neu angelegt.",
+		],
+	},
+	"AmbiguousIdentity": {
+		"title": "Name kollidiert mehrdeutig im Verzeichnis",
+		"what": (
+			"Beim ersten Anlegen kam der Name dieses Kontakts mehrdeutig im Verzeichnis "
+			"vor (z. B. zwei verschiedene „Markus Schwarz“ von unterschiedlichen Firmen). "
+			"Exchange konnte das nicht eindeutig auflösen."
+		),
+		"impact": (
+			"Seit Mai 2026 generiert die Sync-Engine eindeutige Identifier automatisch aus "
+			"der SMTP-Adresse — solche Konflikte entstehen <strong>neu nicht mehr</strong>."
+		),
+		"actions": [
+			"Alte Conflict-Mappings dieser Art können risikofrei gelöscht werden — beim nächsten Sync wird der Kontakt mit dem neuen Verfahren erfolgreich angelegt.",
+		],
+	},
+	"InvalidEmailAddress": {
+		"title": "Die hinterlegte E-Mail-Adresse ist syntaktisch ungültig",
+		"what": (
+			"Die Adresse enthält Zeichen, die in einer SMTP-Adresse nichts zu suchen haben — "
+			"typische Kandidaten: <code>?</code> oder <code>&gt;</code> innerhalb der Adresse, "
+			"führende/folgende Leerzeichen, mehrfache <code>@</code>. Meist ein Copy-Paste-Schaden "
+			"beim Pflegen des Kontakts."
+		),
+		"impact": (
+			"Microsoft Exchange lehnt das Anlegen ab — der Kontakt erscheint <strong>nicht</strong> "
+			"in der GAL. Alles, was am Quell-Kontakt gepflegt wird, bleibt unsichtbar."
+		),
+		"actions": [
+			"Öffnen Sie den Kontakt im geteilten Adressbuch (firmenkontakte@…) und bereinigen Sie die E-Mail-Adresse (Sonderzeichen entfernen).",
+			"Anschließend das Conflict-Mapping löschen — beim nächsten Sync wird der Kontakt sauber angelegt.",
+		],
+	},
+	"SoftDeletedRecipient": {
+		"title": "Die SMTP-Adresse ist von einem gelöschten Konto reserviert",
+		"what": (
+			"Im Microsoft 365-Tenant existiert ein „soft-deleted“ Konto (z. B. ehemaliger "
+			"Mitarbeiter), dessen E-Mail-Adresse noch reserviert ist. Solange diese Reservierung "
+			"besteht, kann <em>keine</em> andere Person — auch nicht als externer MailContact — "
+			"diese Adresse beanspruchen."
+		),
+		"impact": (
+			"Der Kontakt erscheint nicht in der GAL, bis ein Exchange-Administrator den "
+			"reservierten Eintrag freigibt."
+		),
+		"actions": [
+			"<strong>Exchange-Administrator</strong>: Im Admin Center oder per PowerShell prüfen: <code>Get-User -SoftDeletedUser | ?{ $_.EmailAddresses -like \"*&lt;localpart&gt;*\" }</code>",
+			"Soft-Delete-Eintrag dauerhaft entfernen (<code>Remove-MsolUser -RemoveFromRecycleBin</code>) oder die Proxy-Adresse freigeben.",
+			"Anschließend das Conflict-Mapping in ITSync Mapping löschen — beim nächsten Sync wird neu versucht.",
+		],
+	},
 }
 
 
-def _explain_kind(kind: str) -> str:
-	text = _KIND_EXPLAIN.get(kind)
-	if not text:
+def _render_kind_info(kind: str) -> str:
+	info = _KIND_INFO.get(kind)
+	if not info:
 		return ""
-	return f'<div class="explain">{escape_html(text)}</div>'
+	actions_html = "".join(f"<li>{a}</li>" for a in info["actions"])
+	return (
+		'<div class="kind-info">'
+		f'<p class="kind-title">{escape_html(info["title"])}</p>'
+		'<div class="kind-sections">'
+		f'<div class="kind-block what"><h4>Was ist passiert?</h4><p>{info["what"]}</p></div>'
+		f'<div class="kind-block impact"><h4>Was bedeutet das?</h4><p>{info["impact"]}</p></div>'
+		f'<div class="kind-block actions"><h4>Was kann ich tun?</h4><ol>{actions_html}</ol></div>'
+		'</div>'
+		'</div>'
+	)
+
+
+# Renamed for backwards-compatibility: still callable as _explain_kind in tests.
+_explain_kind = _render_kind_info
