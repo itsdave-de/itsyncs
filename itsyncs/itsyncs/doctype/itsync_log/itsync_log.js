@@ -3,6 +3,7 @@ frappe.ui.form.on("ITSync Log", {
 		_itsync_log_render_details(frm);
 		_itsync_log_render_indicator(frm);
 		_itsync_log_toggle_polling(frm);
+		_itsync_log_add_report_button(frm);
 	},
 
 	status(frm) {
@@ -17,6 +18,29 @@ frappe.ui.form.on("ITSync Log", {
 		_itsync_log_stop_polling(frm);
 	},
 });
+
+function _itsync_log_add_report_button(frm) {
+	if (frm.is_new()) return;
+	if (frm.doc.status === "Running") return;
+	frm.add_custom_button(__("Bericht öffnen"), () => {
+		frm.call({
+			method: "get_html_report",
+			doc: frm.doc,
+			freeze: true,
+			freeze_message: __("Bericht wird erstellt …"),
+		}).then((r) => {
+			if (!r.message) return;
+			const blob = new Blob([r.message], { type: "text/html;charset=utf-8" });
+			const url = URL.createObjectURL(blob);
+			const win = window.open(url, "_blank");
+			// Release the object URL once the new window has had a chance to load
+			setTimeout(() => URL.revokeObjectURL(url), 60000);
+			if (!win) {
+				frappe.msgprint(__("Popup blockiert — bitte Popups für dieses Site erlauben."));
+			}
+		});
+	});
+}
 
 function _itsync_log_toggle_polling(frm) {
 	_itsync_log_stop_polling(frm);

@@ -13,6 +13,7 @@ from itsyncs.graph.contacts import (
 	update_contact,
 )
 from itsyncs.graph.exchange import (
+	PermanentExchangeError,
 	create_mail_contact,
 	create_mail_contact_basic,
 	delete_mail_contact,
@@ -486,6 +487,15 @@ def _run_initial_gal_batched(pair, tenant, to_create, counts, error_details, log
 				counts["created"] += 1
 				created_in_chunk.append((sc, alias))
 				pending_lines.append(f"[{_timestamp()}] created: {display}")
+			except PermanentExchangeError as e:
+				# Permanent conflict — record it as a Conflict mapping so we
+				# stop retrying on every subsequent run. Counts as skipped
+				# (no error) since this is data state, not a sync failure.
+				_create_conflict_mapping(pair.name, sc, e.kind, e.detail)
+				counts["skipped"] += 1
+				pending_lines.append(
+					f"[{_timestamp()}] skipped (conflict — {e.kind}): {display} — {e.detail}"
+				)
 			except Exception as e:
 				counts["errors"] += 1
 				error_details.append({
@@ -727,13 +737,27 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 		display = contact.get("display_name") or get_primary_email(contact) or "?"
 		try:
 			mapping = _find_mapping(
-				pair.name, contact["id"], ["name", "target_id", "field_hash"],
+				pair.name, contact["id"], ["name", "target_id", "field_hash", "status"],
 			)
 
 			new_hash = compute_field_hash(contact)
 
 			if mapping:
-				if mapping.field_hash != new_hash:
+				if mapping.status == "Conflict":
+					# Known permanent conflict — don't attempt update.
+					# Refresh the hash so we don't re-process unchanged conflicts forever.
+					if mapping.field_hash != new_hash:
+						frappe.db.set_value("ITSync Mapping", mapping.name, {
+							"field_hash": new_hash,
+							"last_synced": frappe.utils.now_datetime(),
+							"display_name": contact.get("display_name"),
+							"source_email": get_primary_email(contact),
+						}, update_modified=False)
+					counts["skipped"] += 1
+					pending_lines.append(
+						f"[{_timestamp()}] skipped (existing conflict): {display}"
+					)
+				elif mapping.field_hash != new_hash:
 					if target_is_gal:
 						update_mail_contact(target_tenant, mapping.target_id, contact)
 					else:
@@ -750,13 +774,20 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 				else:
 					counts["skipped"] += 1
 			else:
-				if target_is_gal:
-					new_id = create_mail_contact(target_tenant, contact)
-				else:
-					new_id = create_contact(target_tenant, target_conn.email_address, contact, target_folder)
-				_create_mapping(pair.name, contact, new_id)
-				counts["created"] += 1
-				pending_lines.append(f"[{_timestamp()}] created: {display}")
+				try:
+					if target_is_gal:
+						new_id = create_mail_contact(target_tenant, contact)
+					else:
+						new_id = create_contact(target_tenant, target_conn.email_address, contact, target_folder)
+					_create_mapping(pair.name, contact, new_id)
+					counts["created"] += 1
+					pending_lines.append(f"[{_timestamp()}] created: {display}")
+				except PermanentExchangeError as e:
+					_create_conflict_mapping(pair.name, contact, e.kind, e.detail)
+					counts["skipped"] += 1
+					pending_lines.append(
+						f"[{_timestamp()}] skipped (conflict — {e.kind}): {display} — {e.detail}"
+					)
 
 		except Exception as e:
 			counts["errors"] += 1
@@ -785,8 +816,17 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 		for source_id in deleted_ids:
 			processed += 1
 			try:
-				mapping = _find_mapping(pair.name, source_id, ["name", "target_id"])
-				if mapping and mapping.target_id:
+				mapping = _find_mapping(pair.name, source_id, ["name", "target_id", "status"])
+				if not mapping:
+					continue
+				if mapping.status == "Conflict":
+					# Target was never under our control — just drop the mapping row.
+					frappe.delete_doc("ITSync Mapping", mapping.name, ignore_permissions=True)
+					counts["skipped"] += 1
+					pending_lines.append(
+						f"[{_timestamp()}] removed conflict mapping for source_id {source_id} (source deleted)"
+					)
+				elif mapping.target_id:
 					if target_is_gal:
 						delete_mail_contact(target_tenant, mapping.target_id)
 					else:
@@ -807,10 +847,16 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 	else:
 		for source_id in deleted_ids:
 			processed += 1
-			mapping_row = _find_mapping(pair.name, source_id, ["name"])
-			mapping_name = mapping_row["name"] if mapping_row else None
-			if mapping_name:
-				frappe.db.set_value("ITSync Mapping", mapping_name, "status", "Orphaned")
+			mapping_row = _find_mapping(pair.name, source_id, ["name", "status"])
+			if mapping_row:
+				if mapping_row.status == "Conflict":
+					# Conflict mapping for a now-deleted source — just drop it.
+					frappe.delete_doc("ITSync Mapping", mapping_row["name"], ignore_permissions=True)
+				else:
+					frappe.db.set_value(
+						"ITSync Mapping", mapping_row["name"], "status", "Orphaned",
+						update_modified=False,
+					)
 				counts["skipped"] += 1
 
 	if pending_lines:
@@ -884,6 +930,41 @@ def _create_mapping(pair_name: str, source_contact: dict, target_id: str):
 	}
 	if existing:
 		frappe.db.set_value("ITSync Mapping", existing, values, update_modified=False)
+	else:
+		mapping = frappe.new_doc("ITSync Mapping")
+		mapping.sync_pair = pair_name
+		mapping.source_id = source_id
+		mapping.update(values)
+		mapping.insert(ignore_permissions=True)
+
+
+def _create_conflict_mapping(pair_name, source_contact, conflict_kind, conflict_detail):
+	"""Record a permanent conflict as a Mapping row with status='Conflict'.
+
+	Used when New-MailContact fails for a structural reason that will reproduce
+	on every retry (ProxyAddressExists, AmbiguousIdentity, …). Storing a mapping
+	with status='Conflict' prevents the engine from re-attempting on every sync;
+	the contact's user-visible details are still tracked here so a sync-report
+	can surface what was skipped and why. If the underlying conflict gets
+	resolved out-of-band, an admin deletes the mapping to trigger a fresh
+	create attempt on the next run.
+
+	Idempotent like _create_mapping: existing rows are updated in place.
+	"""
+	source_id = source_contact["id"]
+	existing_row = _find_mapping(pair_name, source_id, ["name"])
+	values = {
+		"target_id": "",  # nothing to manage in the target
+		"source_email": get_primary_email(source_contact),
+		"display_name": source_contact.get("display_name"),
+		"field_hash": compute_field_hash(source_contact),
+		"status": "Conflict",
+		"conflict_kind": conflict_kind,
+		"conflict_detail": conflict_detail,
+		"last_synced": frappe.utils.now_datetime(),
+	}
+	if existing_row:
+		frappe.db.set_value("ITSync Mapping", existing_row["name"], values, update_modified=False)
 	else:
 		mapping = frappe.new_doc("ITSync Mapping")
 		mapping.sync_pair = pair_name

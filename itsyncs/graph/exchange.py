@@ -11,6 +11,7 @@ Prerequisites (Azure AD):
 - API permission: Exchange.ManageAsApp (with admin consent)
 - Directory role: Exchange Administrator assigned to the app
 """
+import re
 import time
 
 import httpx
@@ -23,6 +24,78 @@ _primary_domain_cache: dict[str, str] = {}
 
 # Documented system mailbox GUID (same for every Microsoft 365 tenant)
 SYSTEM_MAILBOX_GUID = "bb558c35-97f1-4cb9-8ff7-d53741dc928c"
+
+
+class PermanentExchangeError(Exception):
+	"""Raised when New-MailContact fails for a structural reason that will
+	reproduce on every retry: the SMTP address already belongs to another
+	recipient in the tenant, or the Name collides with multiple existing
+	directory objects.
+
+	Carries a structured `kind` + `detail` so the engine can record a
+	Conflict-status mapping and the UI can show a meaningful reason instead
+	of the raw 409/500 cmdlet payload.
+	"""
+
+	def __init__(self, kind: str, detail: str):
+		self.kind = kind
+		self.detail = detail
+		super().__init__(f"{kind}: {detail}")
+
+
+# Robust against 0 or N backslash-escape layers around the quote chars:
+# Exchange's response is JSON-encoded, and depending on whether we look at
+# resp.text or a re-serialized version, the quote may appear as ", \", \\", …
+_PROXY_RE = re.compile(r'LegacyExchangeDN of \\*"([^"\\]+?)\\*"')
+_PROXY_SMTP_RE = re.compile(r'SMTP:([^\\"]+?)\\*"')
+_IDENTITY_RE = re.compile(r'matching identity \\*"([^"\\]+?)\\*"')
+
+
+def _classify_permanent_error(exc: Exception) -> "PermanentExchangeError | None":
+	"""Inspect an exception from _invoke_command. If it represents a permanent
+	(no-retry-will-help) conflict, return a PermanentExchangeError with structured
+	info. Else return None — caller should treat as transient and re-raise.
+	"""
+	msg = str(exc)
+	if "ProxyAddressExistsException" in msg or "ProxyAddressExists" in msg:
+		smtp_m = _PROXY_SMTP_RE.search(msg)
+		guid_m = _PROXY_RE.search(msg)
+		parts = []
+		if smtp_m:
+			parts.append(f"SMTP {smtp_m.group(1)}")
+		if guid_m:
+			parts.append(f"already used by object {guid_m.group(1)}")
+		detail = "; ".join(parts) or "another recipient in the tenant already owns this SMTP"
+		return PermanentExchangeError("ProxyAddressExists", detail)
+	if "multiple recipients matching identity" in msg:
+		ident_m = _IDENTITY_RE.search(msg)
+		identity = ident_m.group(1) if ident_m else "unknown"
+		return PermanentExchangeError(
+			"AmbiguousIdentity",
+			f"name '{identity}' matches multiple existing directory objects",
+		)
+	return None
+
+
+def _unique_contact_name(email: str, display_name: str) -> str:
+	"""Build a unique `Name` (CN) for New-MailContact.
+
+	Exchange treats `Name` as the canonical Identity. Using the DisplayName here
+	is unreliable: two external contacts with identical names (very common —
+	„Andreas Meyer", „Markus Schwarz") collide and New-MailContact fails with
+	`500 multiple recipients matching identity`. The SMTP address is unique by
+	construction (one MailContact per SMTP), so we use it as the Name. The
+	visible DisplayName stays human-readable via the separate -DisplayName
+	parameter, so Outlook users see no change.
+
+	AD CN limit is 64 chars; emails almost always fit. For outliers we hash.
+	"""
+	if email and len(email) <= 64:
+		return email
+	import hashlib
+	suffix = hashlib.sha256((email or display_name or "").encode("utf-8")).hexdigest()[:8]
+	base = (display_name or email or "contact")[:50]
+	return f"{base}_{suffix}"
 
 
 def get_exchange_token(tenant) -> str:
@@ -281,9 +354,11 @@ def create_mail_contact(tenant, contact_data: dict) -> str:
 
 	display_name = contact_data.get("display_name") or email
 
-	# Build New-MailContact params — include FirstName/LastName directly
+	# Build New-MailContact params — include FirstName/LastName directly.
+	# Name (CN) is constructed to be unique even when DisplayName collides; see
+	# _unique_contact_name's docstring.
 	new_params = {
-		"Name": display_name,
+		"Name": _unique_contact_name(email, display_name),
 		"ExternalEmailAddress": email,
 		"DisplayName": display_name,
 	}
@@ -292,7 +367,13 @@ def create_mail_contact(tenant, contact_data: dict) -> str:
 	if contact_data.get("surname"):
 		new_params["LastName"] = contact_data["surname"]
 
-	results = _invoke_command(tenant, "New-MailContact", new_params)
+	try:
+		results = _invoke_command(tenant, "New-MailContact", new_params)
+	except Exception as e:
+		perm = _classify_permanent_error(e)
+		if perm is not None:
+			raise perm from e
+		raise
 
 	if not results:
 		raise Exception("New-MailContact returned no results.")
@@ -332,7 +413,7 @@ def create_mail_contact_basic(tenant, contact_data: dict) -> str:
 
 	display_name = contact_data.get("display_name") or email
 	params = {
-		"Name": display_name,
+		"Name": _unique_contact_name(email, display_name),
 		"ExternalEmailAddress": email,
 		"DisplayName": display_name,
 	}
@@ -341,7 +422,13 @@ def create_mail_contact_basic(tenant, contact_data: dict) -> str:
 	if contact_data.get("surname"):
 		params["LastName"] = contact_data["surname"]
 
-	results = _invoke_command(tenant, "New-MailContact", params)
+	try:
+		results = _invoke_command(tenant, "New-MailContact", params)
+	except Exception as e:
+		perm = _classify_permanent_error(e)
+		if perm is not None:
+			raise perm from e
+		raise
 	if not results:
 		raise Exception("New-MailContact returned no results.")
 	alias = results[0].get("Alias")
