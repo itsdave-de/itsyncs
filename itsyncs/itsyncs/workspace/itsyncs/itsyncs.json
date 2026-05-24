@@ -91,7 +91,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Setup",
-   "link_count": 1,
+   "link_count": 2,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -104,9 +104,19 @@
    "link_type": "DocType",
    "onboard": 1,
    "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "ITSync Settings",
+   "link_count": 0,
+   "link_to": "ITSync Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
   }
  ],
- "modified": "2026-03-18 14:00:00.000000",
+ "modified": "2026-05-24 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "itsyncs",
  "name": "itsyncs",

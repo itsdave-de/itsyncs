@@ -5,14 +5,14 @@ app_description = "Sync contacts between different Exchange Online sources"
 app_email = "dev@itsdave.de"
 app_license = "gpl-3.0"
 app_logo_url = "/assets/itsyncs/images/itsyncs-logo.svg"
-app_home = "/app/itsync-pair"
+app_home = "/app/itsyncs"
 
 add_to_apps_screen = [
 	{
 		"name": "itsyncs",
 		"logo": "/assets/itsyncs/images/itsyncs-logo.svg",
 		"title": "itsyncs",
-		"route": "/app/itsync-pair",
+		"route": "/app/itsyncs",
 	}
 ]
 
