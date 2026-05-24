@@ -61,6 +61,11 @@ def _build_report_html(log: "ITSyncLog") -> str:
 	# countable via the details text — see _parse_deleted_from_details).
 	actions_html = _build_action_lists(log)
 
+	# Sister-pair conflicts: other Pairs sharing this Pair's source may have
+	# Conflict-mappings the user should know about, since edits to those
+	# contacts will sync through this pair but be skipped in the other.
+	sister_html = _render_sister_conflicts(_get_sister_pair_conflicts(log))
+
 	# Conflicts sections
 	if by_kind:
 		conflict_html = []
@@ -171,6 +176,14 @@ def _build_report_html(log: "ITSyncLog") -> str:
                                                     border-bottom: 1px solid #eef0f3; }}
   table.action-table th {{ color: #6a7280; font-weight: 600; }}
   table.action-table tr:nth-child(even) td {{ background: #fafbfc; }}
+  .sister-warn {{ background: #fff8ea; border-left: 4px solid #d99800;
+                   padding: 0.8em 1.2em; border-radius: 0 4px 4px 0; margin: 1em 0; }}
+  details.sister-list {{ margin: 0.6em 0 1em; border: 1px solid #d8dee5;
+                          border-radius: 4px; padding: 0.6em 0.9em; background: #fafbfc; }}
+  details.sister-list[open] {{ background: #fff; }}
+  details.sister-list summary {{ cursor: pointer; padding: 0.3em 0; font-size: 1em; }}
+  details.sister-list summary strong {{ color: #8a5500; }}
+  details.sister-list h4 {{ margin: 0.8em 0 0.4em; color: #6a4900; font-size: 0.95em; }}
   pre.details {{ background: #f5f7fa; padding: 0.8em 1em; border-radius: 4px;
                   max-height: 360px; overflow-y: auto; font-size: 0.85em;
                   font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }}
@@ -223,6 +236,8 @@ oder anderen Anwendungen nicht erscheint. Suchen Sie unten den Kontakt in der
 </p>
 {conflict_section}
 
+{sister_html}
+
 <div class="tips-box">
 <h3>Tipps aus der Praxis</h3>
 <ul>
@@ -263,6 +278,85 @@ oder anderen Anwendungen nicht erscheint. Suchen Sie unten den Kontakt in der
 
 _MAX_LIST_ROWS = 200
 _DELETED_RE = None  # lazy-initialised regex (built on first use)
+
+
+def _get_sister_pair_conflicts(log) -> dict:
+	"""Conflict-Mappings from other Pairs that share this Pair's source.
+
+	If the user edits a contact in the source mailbox, the change is applied
+	by this pair but may be silently skipped by a sister pair (e.g. GAL).
+	Returning these here lets the report warn about that — otherwise a user
+	looking only at this pair's report would wrongly conclude the change has
+	reached every target.
+	"""
+	if not log.sync_pair:
+		return {}
+	source = frappe.db.get_value("ITSync Pair", log.sync_pair, "source")
+	if not source:
+		return {}
+	sister_names = frappe.get_all(
+		"ITSync Pair",
+		filters={"source": source, "name": ["!=", log.sync_pair]},
+		pluck="name",
+	)
+	if not sister_names:
+		return {}
+	rows = frappe.get_all(
+		"ITSync Mapping",
+		filters={"sync_pair": ["in", sister_names], "status": "Conflict"},
+		fields=["sync_pair", "display_name", "source_email", "conflict_kind", "conflict_detail"],
+		order_by="sync_pair asc, conflict_kind asc, display_name asc",
+	)
+	by_pair: dict[str, list[dict]] = {}
+	for r in rows:
+		by_pair.setdefault(r.sync_pair, []).append(r)
+	return by_pair
+
+
+def _render_sister_conflicts(by_pair: dict) -> str:
+	if not by_pair:
+		return ""
+	parts = [
+		'<h2>Auch im Blick behalten: Konflikte in anderen Sync-Zielen</h2>',
+		'<div class="sister-warn">',
+		'<p>Die <strong>Quelle</strong> dieses Pairs wird auch von anderen '
+		'Sync-Pairs verwendet. In jenen Pairs gibt es Kontakte, die '
+		'<strong>dauerhaft übersprungen</strong> werden — Änderungen an einem '
+		'dieser Kontakte werden <em>in diesem Pair</em> normal übernommen, '
+		'aber <em>im jeweils anderen Sync-Ziel nicht</em>. Wenn jemand sich '
+		'wundert, warum eine Pflege-Änderung in <em>nur einem</em> seiner '
+		'Adressbücher erscheint — hier nachsehen.</p>',
+		'</div>',
+	]
+	for pair_name, rows in by_pair.items():
+		kinds: dict[str, list[dict]] = {}
+		for r in rows:
+			kinds.setdefault(r.conflict_kind or "Unknown", []).append(r)
+		kind_summary = " · ".join(
+			f"{escape_html(k)}: {len(v)}" for k, v in kinds.items()
+		)
+		parts.append('<details class="sister-list">')
+		parts.append(
+			'<summary>'
+			f'<strong>{escape_html(pair_name)}</strong> '
+			f'<span class="action-count">({len(rows)} Kontakte — {kind_summary})</span>'
+			'</summary>'
+		)
+		for kind, ks in kinds.items():
+			parts.append(f'<h4>{escape_html(kind)} <span class="muted">({len(ks)})</span></h4>')
+			parts.append('<table class="conflicts">')
+			parts.append('<tr><th>Kontakt</th><th>E-Mail</th><th>Konflikt-Detail</th></tr>')
+			for r in ks:
+				parts.append(
+					'<tr>'
+					f'<td>{escape_html(r.display_name or "")}</td>'
+					f'<td>{escape_html(r.source_email or "")}</td>'
+					f'<td><code>{escape_html(r.conflict_detail or "")}</code></td>'
+					'</tr>'
+				)
+			parts.append('</table>')
+		parts.append('</details>')
+	return '\n'.join(parts)
 
 
 def _build_action_lists(log) -> str:
