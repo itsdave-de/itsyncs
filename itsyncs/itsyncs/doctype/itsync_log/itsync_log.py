@@ -2,7 +2,7 @@ import html
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import escape_html
+from frappe.utils import escape_html, get_datetime
 
 
 class ITSyncLog(Document):
@@ -32,9 +32,15 @@ def _build_report_html(log: "ITSyncLog") -> str:
 	for c in conflicts:
 		by_kind.setdefault(c.conflict_kind or "Unknown", []).append(c)
 
+	# Normalize date fields: when called via frm.call(doc=frm.doc), Frappe
+	# rehydrates the doc from JSON and date fields arrive as strings rather
+	# than datetime objects. get_datetime accepts both.
+	started = get_datetime(log.started_at) if log.started_at else None
+	completed = get_datetime(log.completed_at) if log.completed_at else None
+
 	duration = ""
-	if log.started_at and log.completed_at:
-		secs = (log.completed_at - log.started_at).total_seconds()
+	if started and completed:
+		secs = (completed - started).total_seconds()
 		if secs < 60:
 			duration = f"{secs:.0f} s"
 		else:
