@@ -550,6 +550,26 @@ _KIND_INFO = {
 			"Anschließend das Conflict-Mapping löschen — beim nächsten Sync wird der Kontakt sauber angelegt.",
 		],
 	},
+	"MissingEmail": {
+		"title": "Quell-Kontakt hat keine E-Mail-Adresse",
+		"what": (
+			"Im zentralen Adressbuch ist bei diesem Kontakt keine SMTP-Adresse "
+			"hinterlegt. Microsoft Exchange erlaubt aber keine MailContacts ohne "
+			"E-Mail — ein MailContact <em>ist</em> per Definition eine E-Mail-Adresse "
+			"mit Anzeigename und Zusatzfeldern."
+		),
+		"impact": (
+			"Der Kontakt erscheint <strong>nicht</strong> in der GAL. Wenn er als "
+			"echter externer Kontakt mit allen Pflegefeldern sichtbar werden soll, "
+			"muss eine gültige E-Mail-Adresse ergänzt werden. In Sync-Ziele ohne "
+			"SMTP-Anforderung (z. B. Outlook-Postfächer wie 3CX) wird er hingegen "
+			"normal synchronisiert."
+		),
+		"actions": [
+			"Bewusst keine E-Mail vorhanden (z. B. Notiz-/Visitenkarten-Eintrag): nichts tun — der Status bleibt sauber dokumentiert.",
+			"E-Mail nachpflegen: im zentralen Adressbuch eine SMTP-Adresse ergänzen. Beim nächsten Sync wird automatisch erkannt, dass der Konflikt sich aufgelöst hat, und der Kontakt wird neu in der GAL angelegt — das MissingEmail-Mapping wird durch ein normales Synced-Mapping ersetzt.",
+		],
+	},
 	"SoftDeletedRecipient": {
 		"title": "Die SMTP-Adresse ist von einem gelöschten Konto reserviert",
 		"what": (

@@ -355,7 +355,10 @@ def _run_initial_sync(pair, source_conn, target_conn, source_client, target_clie
 		else:
 			to_create.append(sc)
 
-	# Pre-filter: skip contacts that can't become GAL entries (no email, non-SMTP)
+	# Pre-filter: skip contacts that can't become GAL entries (no email, non-SMTP).
+	# Record each as a Conflict-Mapping with kind="MissingEmail" so the contact
+	# is visible in the sync-report and won't keep landing in the "skipped" tally
+	# without explanation on every future run.
 	target_is_gal = target_conn.connector_type == "GAL"
 	ineligible_count = 0
 	if target_is_gal and to_create:
@@ -365,6 +368,7 @@ def _run_initial_sync(pair, source_conn, target_conn, source_client, target_clie
 			if ok:
 				eligible.append(sc)
 			else:
+				_create_conflict_mapping(pair.name, sc, "MissingEmail", reason or "no email address")
 				ineligible_count += 1
 				counts["skipped"] += 1
 		to_create = eligible
@@ -579,7 +583,10 @@ def _reconcile_unmapped(pair, source_conn, target_conn, source_client, target_cl
 
 	target_is_gal = target_conn.connector_type == "GAL"
 
-	# Pre-filter for GAL eligibility
+	# Pre-filter for GAL eligibility — same treatment as the initial-sync path:
+	# track ineligible contacts as Conflict-Mappings (kind="MissingEmail") so
+	# they appear by name in the report and don't keep being re-evaluated by
+	# the reconcile loop on every future run.
 	skipped_ineligible = 0
 	if target_is_gal:
 		eligible = []
@@ -588,6 +595,7 @@ def _reconcile_unmapped(pair, source_conn, target_conn, source_client, target_cl
 			if ok:
 				eligible.append(c)
 			else:
+				_create_conflict_mapping(pair.name, c, "MissingEmail", reason or "no email address")
 				skipped_ineligible += 1
 				counts["skipped"] += 1
 		unmapped = eligible
@@ -737,10 +745,24 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 		display = contact.get("display_name") or get_primary_email(contact) or "?"
 		try:
 			mapping = _find_mapping(
-				pair.name, contact["id"], ["name", "target_id", "field_hash", "status"],
+				pair.name, contact["id"], ["name", "target_id", "field_hash", "status", "conflict_kind"],
 			)
 
 			new_hash = compute_field_hash(contact)
+
+			# Auto-recover MissingEmail: a contact whose source data improved
+			# (E-Mail nachgetragen) should be re-attempted rather than skipped
+			# forever. We only auto-clear this specific kind; structural
+			# conflicts like ProxyAddressExists require manual intervention.
+			if (
+				mapping
+				and mapping.status == "Conflict"
+				and mapping.conflict_kind == "MissingEmail"
+				and target_is_gal
+				and _is_gal_eligible(contact)[0]
+			):
+				frappe.delete_doc("ITSync Mapping", mapping.name, ignore_permissions=True)
+				mapping = None  # fall through to create-path
 
 			if mapping:
 				if mapping.status == "Conflict":
