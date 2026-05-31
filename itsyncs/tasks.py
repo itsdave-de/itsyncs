@@ -114,12 +114,26 @@ def _mark_pair_dead(pair_name, log_name, reason):
 
 
 def _enqueue_due_syncs():
-	"""Enqueue scheduled syncs for pairs whose schedule window has elapsed."""
+	"""Enqueue scheduled syncs for pairs whose schedule window has elapsed.
+
+	Serializes per source connector: a pair is skipped this tick if another pair
+	sharing its source is already running (from a prior tick) or was enqueued
+	earlier in this tick. Two syncs reading the same source must not run
+	concurrently — they would collide on the shared connector row and could read
+	each other's in-flight state. A deferred pair simply runs on the next tick.
+	"""
 	pairs = frappe.get_all(
 		"ITSync Pair",
 		filters={"enabled": 1, "initial_sync_complete": 1, "status": ["!=", "Running"]},
-		fields=["name", "schedule", "last_run", "job_timeout"],
+		fields=["name", "source", "schedule", "last_run", "job_timeout"],
 	)
+
+	# Sources occupied by an in-flight (Running) pair from a previous tick.
+	busy_sources = set(frappe.get_all(
+		"ITSync Pair",
+		filters={"status": "Running"},
+		pluck="source",
+	))
 
 	now = frappe.utils.now_datetime()
 
@@ -130,6 +144,12 @@ def _enqueue_due_syncs():
 			diff = (now - pair.last_run).total_seconds() / 60
 			if diff < interval_minutes:
 				continue
+
+		# Per-source serialization: never start a second sync from the same
+		# source while one is still in flight. Deferred pairs run next tick.
+		if pair.source in busy_sources:
+			continue
+		busy_sources.add(pair.source)
 
 		job_id = f"itsync_scheduled_{pair.name}"
 

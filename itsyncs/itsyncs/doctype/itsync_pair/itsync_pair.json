@@ -13,6 +13,7 @@
   "last_run",
   "last_run_log",
   "current_job_id",
+  "delta_token",
   "section_break_schedule",
   "schedule",
   "enabled",
@@ -89,6 +90,14 @@
    "fieldtype": "Data",
    "hidden": 1,
    "label": "Current Job ID",
+   "read_only": 1
+  },
+  {
+   "description": "Per-pair incremental change-tracking token. Stored on the pair (not the connector) so two pairs sharing one source read deltas independently.",
+   "fieldname": "delta_token",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "label": "Delta Token",
    "read_only": 1
   },
   {
@@ -207,7 +216,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-03-18 14:00:00.000000",
+ "modified": "2026-05-31 19:30:00.000000",
  "modified_by": "Administrator",
  "module": "itsyncs",
  "name": "ITSync Pair",

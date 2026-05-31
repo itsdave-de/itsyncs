@@ -465,7 +465,7 @@ def _run_initial_sync(pair, source_conn, target_conn, source_client, target_clie
 	_write_progress(log_name, total, total, "Storing delta tokens")
 	frappe.db.commit()
 
-	_store_delta_tokens(source_conn, source_client)
+	_store_delta_tokens(pair, source_conn, source_client)
 	frappe.db.commit()
 
 
@@ -762,13 +762,13 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 	if source_conn.connector_type == "Sage SQL":
 		from itsyncs.sage.contacts import fetch_sage_delta
 
-		last_rv = int(source_conn.delta_token or "0")
+		last_rv = int(pair.delta_token or "0")
 		changed, deleted_ids, new_rv = fetch_sage_delta(source_conn, last_rv)
 		if new_rv > last_rv:
-			source_conn.db_set("delta_token", str(new_rv))
+			pair.db_set("delta_token", str(new_rv))
 
 	elif source_conn.connector_type == "GAL":
-		delta_data = json.loads(source_conn.delta_token or "{}") if source_conn.delta_token else {}
+		delta_data = json.loads(pair.delta_token or "{}") if pair.delta_token else {}
 		changed, deleted_ids, new_token_users, new_token_org = fetch_gal_delta(
 			source_client,
 			source_conn.gal_include,
@@ -781,17 +781,17 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 		if new_token_org:
 			new_tokens["org"] = new_token_org
 		if new_tokens:
-			source_conn.db_set("delta_token", json.dumps(new_tokens))
+			pair.db_set("delta_token", json.dumps(new_tokens))
 	else:
 		source_folder = source_conn.contact_folder or None
 		changed, _, deleted_ids, new_delta_token = fetch_contact_delta(
 			source_client,
 			source_conn.email_address,
-			source_conn.delta_token,
+			pair.delta_token,
 			folder_id=source_folder,
 		)
 		if new_delta_token:
-			source_conn.db_set("delta_token", new_delta_token)
+			pair.db_set("delta_token", new_delta_token)
 
 	target_is_gal = target_conn.connector_type == "GAL"
 	target_folder = target_conn.contact_folder or None
@@ -1061,19 +1061,23 @@ def _create_conflict_mapping(pair_name, source_contact, conflict_kind, conflict_
 		mapping.insert(ignore_permissions=True)
 
 
-def _store_delta_tokens(source_conn, source_client):
-	"""Initialize delta tokens after a full sync."""
+def _store_delta_tokens(pair, source_conn, source_client):
+	"""Initialize the pair's delta token after a full sync.
+
+	The token is stored on the pair, not the source connector, so two pairs that
+	share one source connector track their deltas independently.
+	"""
 	if source_conn.connector_type == "Sage SQL":
 		from itsyncs.sage.client import get_max_rowversion
 
 		max_rv = get_max_rowversion(source_conn)
-		source_conn.db_set("delta_token", str(max_rv))
+		pair.db_set("delta_token", str(max_rv))
 	elif source_conn.connector_type in ("Mailbox", "Shared Mailbox"):
 		_, _, _, new_token = fetch_contact_delta(
 			source_client, source_conn.email_address, folder_id=source_conn.contact_folder or None
 		)
 		if new_token:
-			source_conn.db_set("delta_token", new_token)
+			pair.db_set("delta_token", new_token)
 	elif source_conn.connector_type == "GAL":
 		_, _, token_users, token_org = fetch_gal_delta(source_client, source_conn.gal_include)
 		tokens = {}
@@ -1082,4 +1086,4 @@ def _store_delta_tokens(source_conn, source_client):
 		if token_org:
 			tokens["org"] = token_org
 		if tokens:
-			source_conn.db_set("delta_token", json.dumps(tokens))
+			pair.db_set("delta_token", json.dumps(tokens))
