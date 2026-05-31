@@ -205,11 +205,24 @@ def run_sync(pair_name: str, sync_type: str = "Incremental", log_name: str | Non
 		pair_update["current_job_id"] = ""
 		frappe.db.set_value("ITSync Pair", pair_name, pair_update, update_modified=False)
 
-		source_mapping_count = frappe.db.count("ITSync Mapping", {"sync_pair": pair_name, "status": "Synced"})
-		frappe.db.set_value("ITSync Connector", source_conn.name, "contact_count", source_mapping_count, update_modified=False)
-		frappe.db.set_value("ITSync Connector", target_conn.name, "contact_count", source_mapping_count, update_modified=False)
-
+		# Persist the critical log + pair state before the cosmetic bookkeeping
+		# below, so a collision there can never undo or fail a finished sync.
 		frappe.db.commit()
+
+		# contact_count is a cached display count on the connector rows. When two
+		# pairs share a connector (e.g. one source feeding both 3CX and the GAL),
+		# their finalizations can collide on the same `tabITSync Connector` row
+		# and raise QueryDeadlockError (MySQL 1020). That must never turn an
+		# otherwise successful sync into "Failed (job killed)", so this write is
+		# best-effort and isolated in its own transaction.
+		try:
+			source_mapping_count = frappe.db.count("ITSync Mapping", {"sync_pair": pair_name, "status": "Synced"})
+			frappe.db.set_value("ITSync Connector", source_conn.name, "contact_count", source_mapping_count, update_modified=False)
+			frappe.db.set_value("ITSync Connector", target_conn.name, "contact_count", source_mapping_count, update_modified=False)
+			frappe.db.commit()
+		except Exception as e:
+			frappe.db.rollback()
+			_append_log_lines(log.name, [f"[{_timestamp()}] (contact_count bookkeeping skipped: {e})"])
 
 		frappe.publish_realtime(
 			"itsync_sync_complete",
@@ -586,6 +599,7 @@ def _reconcile_unmapped(pair, source_conn, target_conn, source_client, target_cl
 	# nearly free and only writes when a contact genuinely drifted.
 	drift_updated = 0
 	drift_errors = 0
+	drift_lines = []
 	for c in source_contacts:
 		m = mapped_by_id.get(c.get("id"))
 		if not m or m.status != "Synced" or not m.target_id:
@@ -593,6 +607,7 @@ def _reconcile_unmapped(pair, source_conn, target_conn, source_client, target_cl
 		new_hash = compute_field_hash(c)
 		if new_hash == m.field_hash:
 			continue
+		display = c.get("display_name") or get_primary_email(c) or "?"
 		try:
 			if target_is_gal:
 				update_mail_contact(target_tenant, m.target_id, c)
@@ -606,9 +621,11 @@ def _reconcile_unmapped(pair, source_conn, target_conn, source_client, target_cl
 			}, update_modified=False)
 			counts["updated"] += 1
 			drift_updated += 1
+			drift_lines.append(f"[{_timestamp()}] drift-update: {display}")
 		except Exception as e:
 			counts["errors"] += 1
 			drift_errors += 1
+			drift_lines.append(f"[{_timestamp()}] drift-update FAILED: {display}: {e}")
 			error_details.append({
 				"contact": c.get("display_name"),
 				"email": get_primary_email(c),
@@ -616,10 +633,11 @@ def _reconcile_unmapped(pair, source_conn, target_conn, source_client, target_cl
 				"error": str(e),
 			})
 	if drift_updated or drift_errors:
-		_append_log_lines(log_name, [
+		drift_lines.append(
 			f"[{_timestamp()}] Reconcile drift: {drift_updated} field-update(s) pushed"
-			+ (f", {drift_errors} error(s)" if drift_errors else ""),
-		])
+			+ (f", {drift_errors} error(s)" if drift_errors else "")
+		)
+		_append_log_lines(log_name, drift_lines)
 		frappe.db.commit()
 
 	unmapped = [c for c in source_contacts if c.get("id") not in mapped_ids]
