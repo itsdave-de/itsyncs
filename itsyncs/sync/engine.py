@@ -209,16 +209,14 @@ def run_sync(pair_name: str, sync_type: str = "Incremental", log_name: str | Non
 		# below, so a collision there can never undo or fail a finished sync.
 		frappe.db.commit()
 
-		# contact_count is a cached display count on the connector rows. When two
-		# pairs share a connector (e.g. one source feeding both 3CX and the GAL),
-		# their finalizations can collide on the same `tabITSync Connector` row
-		# and raise QueryDeadlockError (MySQL 1020). That must never turn an
-		# otherwise successful sync into "Failed (job killed)", so this write is
-		# best-effort and isolated in its own transaction.
+		# contact_count is a cosmetic cached count. We only set it on the *target*
+		# connector (contacts this pair synced into it); the source connector is
+		# left untouched so a sync writes no shared per-source state — its count
+		# is owned by connection validation, not by whichever pair ran last.
+		# Still best-effort/isolated in case two pairs ever share a target row.
 		try:
-			source_mapping_count = frappe.db.count("ITSync Mapping", {"sync_pair": pair_name, "status": "Synced"})
-			frappe.db.set_value("ITSync Connector", source_conn.name, "contact_count", source_mapping_count, update_modified=False)
-			frappe.db.set_value("ITSync Connector", target_conn.name, "contact_count", source_mapping_count, update_modified=False)
+			synced_count = frappe.db.count("ITSync Mapping", {"sync_pair": pair_name, "status": "Synced"})
+			frappe.db.set_value("ITSync Connector", target_conn.name, "contact_count", synced_count, update_modified=False)
 			frappe.db.commit()
 		except Exception as e:
 			frappe.db.rollback()
