@@ -550,27 +550,77 @@ def _run_initial_gal_batched(pair, tenant, to_create, counts, error_details, log
 
 
 def _reconcile_unmapped(pair, source_conn, target_conn, source_client, target_client, target_tenant, counts, error_details, log_name):
-	"""Find source contacts without a mapping and create them in the target.
+	"""Reconcile the target against the full source state.
 
 	Runs at the start of every incremental sync. Catches:
 	  - Transient failures from the initial sync (Exchange 500s, timeouts)
 	  - Contacts added to the source between syncs
 	  - Contacts whose data was corrected (e.g. email added) since last run
+	  - Field-level edits the source delta silently dropped (drift detection)
 
 	Cost when everything is clean: one source-fetch (needed anyway for delta) +
-	one DB query on ITSync Mapping ≈ 0–2 s. Only triggers Graph API calls when
-	there are actual unmapped contacts with valid emails.
+	one DB query on ITSync Mapping + an in-memory field-hash compare per mapped
+	contact ≈ 0–2 s. Only triggers Graph API writes for contacts that are
+	genuinely unmapped or whose field-hash actually drifted.
 	"""
 	_write_progress(log_name, 0, 0, "Reconcile: checking for unmapped contacts")
 	frappe.db.commit()
 
 	source_contacts = _fetch_source_contacts(source_client, source_conn)
-	mapped_ids = set(frappe.get_all(
+	mapping_rows = frappe.get_all(
 		"ITSync Mapping",
 		filters={"sync_pair": pair.name},
-		fields=["source_id"],
-		pluck="source_id",
-	))
+		fields=["name", "source_id", "target_id", "field_hash", "status"],
+	)
+	mapped_by_id = {r.source_id: r for r in mapping_rows}
+	mapped_ids = set(mapped_by_id.keys())
+
+	target_is_gal = target_conn.connector_type == "GAL"
+
+	# Drift detection: catch field-level edits on already-mapped contacts that
+	# the source delta silently dropped. Microsoft Graph contact delta is
+	# best-effort and documented to miss modifications (it can return 200 with
+	# an empty change set even though a property changed), so relying on delta
+	# alone lets edits sit unsynced indefinitely. The reconcile already holds
+	# the full source state, so a field-hash comparison against each mapping is
+	# nearly free and only writes when a contact genuinely drifted.
+	drift_updated = 0
+	drift_errors = 0
+	for c in source_contacts:
+		m = mapped_by_id.get(c.get("id"))
+		if not m or m.status != "Synced" or not m.target_id:
+			continue
+		new_hash = compute_field_hash(c)
+		if new_hash == m.field_hash:
+			continue
+		try:
+			if target_is_gal:
+				update_mail_contact(target_tenant, m.target_id, c)
+			else:
+				update_contact(target_tenant, target_conn.email_address, m.target_id, c)
+			frappe.db.set_value("ITSync Mapping", m.name, {
+				"field_hash": new_hash,
+				"last_synced": frappe.utils.now_datetime(),
+				"display_name": c.get("display_name"),
+				"source_email": get_primary_email(c),
+			}, update_modified=False)
+			counts["updated"] += 1
+			drift_updated += 1
+		except Exception as e:
+			counts["errors"] += 1
+			drift_errors += 1
+			error_details.append({
+				"contact": c.get("display_name"),
+				"email": get_primary_email(c),
+				"stage": "reconcile-drift",
+				"error": str(e),
+			})
+	if drift_updated or drift_errors:
+		_append_log_lines(log_name, [
+			f"[{_timestamp()}] Reconcile drift: {drift_updated} field-update(s) pushed"
+			+ (f", {drift_errors} error(s)" if drift_errors else ""),
+		])
+		frappe.db.commit()
 
 	unmapped = [c for c in source_contacts if c.get("id") not in mapped_ids]
 
@@ -580,8 +630,6 @@ def _reconcile_unmapped(pair, source_conn, target_conn, source_client, target_cl
 		])
 		frappe.db.commit()
 		return
-
-	target_is_gal = target_conn.connector_type == "GAL"
 
 	# Pre-filter for GAL eligibility — same treatment as the initial-sync path:
 	# track ineligible contacts as Conflict-Mappings (kind="MissingEmail") so
