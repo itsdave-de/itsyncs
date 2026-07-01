@@ -12,11 +12,11 @@
  "fields": [
   {
    "columns": 5,
+   "description": "Stored as-is from the source (a contact mirror may hold non-SMTP values).",
    "fieldname": "email_address",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Email",
-   "options": "Email",
    "reqd": 1
   },
   {

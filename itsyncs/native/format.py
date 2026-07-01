@@ -75,10 +75,20 @@ _SCALAR_FIELDS = (
 )
 
 
+def _cap(val, n=140):
+	"""Truncate to a Data field's max length so pathological source values (an
+	over-long company name etc.) don't fail the whole contact insert."""
+	if isinstance(val, str) and len(val) > n:
+		return val[:n]
+	return val
+
+
 def apply_normalized(doc, data: dict) -> None:
 	"""Populate an ITSync Contact doc from a normalized contact dict (target write)."""
 	for f in _SCALAR_FIELDS:
-		doc.set(f, data.get(f))
+		# personal_notes is a Text field — never truncated.
+		val = data.get(f)
+		doc.set(f, val if f == "personal_notes" else _cap(val))
 
 	doc.birthday = data.get("birthday") or None
 	cats = data.get("categories")
@@ -88,18 +98,18 @@ def apply_normalized(doc, data: dict) -> None:
 	for i, e in enumerate(data.get("email_addresses") or []):
 		if e.get("address"):
 			doc.append("emails", {
-				"email_address": e["address"],
-				"email_name": e.get("name"),
+				"email_address": _cap(e["address"]),
+				"email_name": _cap(e.get("name")),
 				"is_primary": 1 if i == 0 else 0,
 			})
 
 	doc.set("phones", [])
 	for n in data.get("business_phones") or []:
-		doc.append("phones", {"number": n, "phone_type": "Business"})
+		doc.append("phones", {"number": _cap(n), "phone_type": "Business"})
 	for n in data.get("home_phones") or []:
-		doc.append("phones", {"number": n, "phone_type": "Home"})
+		doc.append("phones", {"number": _cap(n), "phone_type": "Home"})
 	if data.get("mobile_phone"):
-		doc.append("phones", {"number": data["mobile_phone"], "phone_type": "Mobile"})
+		doc.append("phones", {"number": _cap(data["mobile_phone"]), "phone_type": "Mobile"})
 
 	doc.set("addresses", [])
 	for kind, key in (("Business", "business_address"), ("Home", "home_address"), ("Other", "other_address")):
@@ -108,8 +118,8 @@ def apply_normalized(doc, data: dict) -> None:
 			doc.append("addresses", {
 				"address_type": kind,
 				"street": a.get("street"),
-				"city": a.get("city"),
-				"state": a.get("state"),
-				"postal_code": a.get("postal_code"),
-				"country": a.get("country_or_region"),
+				"city": _cap(a.get("city")),
+				"state": _cap(a.get("state")),
+				"postal_code": _cap(a.get("postal_code")),
+				"country": _cap(a.get("country_or_region")),
 			})
