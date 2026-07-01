@@ -251,11 +251,22 @@ def _build_contact_body(contact_data: dict) -> dict:
 		"given_name": "givenName",
 		"surname": "surname",
 		"display_name": "displayName",
+		"middle_name": "middleName",
+		"nickname": "nickName",
+		"title": "title",
+		"generation": "generation",
+		"initials": "initials",
+		"file_as": "fileAs",
 		"company_name": "companyName",
 		"job_title": "jobTitle",
 		"department": "department",
+		"profession": "profession",
 		"office_location": "officeLocation",
+		"business_home_page": "businessHomePage",
+		"manager": "manager",
+		"assistant_name": "assistantName",
 		"mobile_phone": "mobilePhone",
+		"spouse_name": "spouseName",
 		"personal_notes": "personalNotes",
 	}
 
@@ -263,6 +274,31 @@ def _build_contact_body(contact_data: dict) -> dict:
 		val = contact_data.get(src)
 		if val is not None:
 			body[dst] = val
+
+	if contact_data.get("categories"):
+		body["categories"] = contact_data["categories"]
+
+	if contact_data.get("birthday"):
+		# Graph expects a dateTimeOffset; midnight UTC on the given date.
+		body["birthday"] = f"{str(contact_data['birthday'])[:10]}T00:00:00Z"
+
+	if contact_data.get("home_phones"):
+		body["homePhones"] = contact_data["home_phones"]
+
+	for src, dst in (("home_address", "homeAddress"), ("other_address", "otherAddress")):
+		addr = contact_data.get(src)
+		if addr:
+			built = {
+				k: v for k, v in {
+					"street": addr.get("street"),
+					"city": addr.get("city"),
+					"state": addr.get("state"),
+					"postalCode": addr.get("postal_code"),
+					"countryOrRegion": addr.get("country_or_region"),
+				}.items() if v is not None
+			}
+			if built:
+				body[dst] = built
 
 	if contact_data.get("business_phones"):
 		body["businessPhones"] = contact_data["business_phones"]
@@ -309,19 +345,47 @@ def _normalize_contact(raw: dict) -> dict:
 			"country_or_region": addr.get("countryOrRegion"),
 		}
 
+	def _addr(raw_addr):
+		if raw_addr and any([raw_addr.get("street"), raw_addr.get("city"), raw_addr.get("state"),
+							  raw_addr.get("postalCode"), raw_addr.get("countryOrRegion")]):
+			return {
+				"street": raw_addr.get("street"),
+				"city": raw_addr.get("city"),
+				"state": raw_addr.get("state"),
+				"postal_code": raw_addr.get("postalCode"),
+				"country_or_region": raw_addr.get("countryOrRegion"),
+			}
+		return None
+
 	return {
 		"id": raw.get("id"),
 		"display_name": raw.get("displayName"),
 		"given_name": raw.get("givenName"),
 		"surname": raw.get("surname"),
+		"middle_name": raw.get("middleName"),
+		"nickname": raw.get("nickName"),
+		"title": raw.get("title"),
+		"generation": raw.get("generation"),
+		"initials": raw.get("initials"),
+		"file_as": raw.get("fileAs"),
 		"email_addresses": email_addresses,
 		"business_phones": raw.get("businessPhones") or [],
+		"home_phones": raw.get("homePhones") or [],
 		"mobile_phone": raw.get("mobilePhone"),
 		"company_name": raw.get("companyName"),
 		"job_title": raw.get("jobTitle"),
 		"department": raw.get("department"),
+		"profession": raw.get("profession"),
 		"office_location": raw.get("officeLocation"),
+		"business_home_page": raw.get("businessHomePage"),
+		"manager": raw.get("manager"),
+		"assistant_name": raw.get("assistantName"),
 		"business_address": business_address,
+		"home_address": _addr(raw.get("homeAddress")),
+		"other_address": _addr(raw.get("otherAddress")),
+		"birthday": (raw.get("birthday") or "")[:10] or None,
+		"spouse_name": raw.get("spouseName"),
+		"categories": raw.get("categories") or [],
 		"personal_notes": raw.get("personalNotes"),
 	}
 

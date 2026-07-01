@@ -1,0 +1,268 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-07-01 09:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "address_book",
+  "display_name",
+  "column_break_head",
+  "file_as",
+  "section_name",
+  "title",
+  "given_name",
+  "middle_name",
+  "surname",
+  "column_break_name",
+  "nickname",
+  "initials",
+  "generation",
+  "section_org",
+  "company_name",
+  "job_title",
+  "department",
+  "profession",
+  "column_break_org",
+  "office_location",
+  "business_home_page",
+  "manager",
+  "assistant_name",
+  "section_emails",
+  "emails",
+  "section_phones",
+  "phones",
+  "section_addresses",
+  "addresses",
+  "section_personal",
+  "birthday",
+  "spouse_name",
+  "column_break_personal",
+  "categories",
+  "section_notes",
+  "personal_notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "address_book",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Address Book",
+   "options": "ITSync Address Book",
+   "reqd": 1
+  },
+  {
+   "fieldname": "display_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Display Name"
+  },
+  {
+   "fieldname": "column_break_head",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "How the contact is filed/sorted (Exchange fileAs).",
+   "fieldname": "file_as",
+   "fieldtype": "Data",
+   "label": "File As"
+  },
+  {
+   "fieldname": "section_name",
+   "fieldtype": "Section Break",
+   "label": "Name"
+  },
+  {
+   "description": "Salutation (Herr/Frau/Dr. …)",
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title"
+  },
+  {
+   "fieldname": "given_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "First Name"
+  },
+  {
+   "fieldname": "middle_name",
+   "fieldtype": "Data",
+   "label": "Middle Name"
+  },
+  {
+   "fieldname": "surname",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Last Name"
+  },
+  {
+   "fieldname": "column_break_name",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "nickname",
+   "fieldtype": "Data",
+   "label": "Nickname"
+  },
+  {
+   "fieldname": "initials",
+   "fieldtype": "Data",
+   "label": "Initials"
+  },
+  {
+   "description": "Name suffix (Exchange generation), e.g. jr.",
+   "fieldname": "generation",
+   "fieldtype": "Data",
+   "label": "Suffix"
+  },
+  {
+   "fieldname": "section_org",
+   "fieldtype": "Section Break",
+   "label": "Organization"
+  },
+  {
+   "fieldname": "company_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Company"
+  },
+  {
+   "fieldname": "job_title",
+   "fieldtype": "Data",
+   "label": "Job Title"
+  },
+  {
+   "fieldname": "department",
+   "fieldtype": "Data",
+   "label": "Department"
+  },
+  {
+   "fieldname": "profession",
+   "fieldtype": "Data",
+   "label": "Profession"
+  },
+  {
+   "fieldname": "column_break_org",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "office_location",
+   "fieldtype": "Data",
+   "label": "Office Location"
+  },
+  {
+   "fieldname": "business_home_page",
+   "fieldtype": "Data",
+   "label": "Business Home Page"
+  },
+  {
+   "fieldname": "manager",
+   "fieldtype": "Data",
+   "label": "Manager"
+  },
+  {
+   "fieldname": "assistant_name",
+   "fieldtype": "Data",
+   "label": "Assistant"
+  },
+  {
+   "fieldname": "section_emails",
+   "fieldtype": "Section Break",
+   "label": "Emails"
+  },
+  {
+   "fieldname": "emails",
+   "fieldtype": "Table",
+   "label": "Emails",
+   "options": "ITSync Contact Email"
+  },
+  {
+   "fieldname": "section_phones",
+   "fieldtype": "Section Break",
+   "label": "Phones"
+  },
+  {
+   "fieldname": "phones",
+   "fieldtype": "Table",
+   "label": "Phones",
+   "options": "ITSync Contact Phone"
+  },
+  {
+   "fieldname": "section_addresses",
+   "fieldtype": "Section Break",
+   "label": "Addresses"
+  },
+  {
+   "fieldname": "addresses",
+   "fieldtype": "Table",
+   "label": "Addresses",
+   "options": "ITSync Contact Address"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_personal",
+   "fieldtype": "Section Break",
+   "label": "Personal"
+  },
+  {
+   "fieldname": "birthday",
+   "fieldtype": "Date",
+   "label": "Birthday"
+  },
+  {
+   "fieldname": "spouse_name",
+   "fieldtype": "Data",
+   "label": "Spouse / Partner"
+  },
+  {
+   "fieldname": "column_break_personal",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Comma-separated categories.",
+   "fieldname": "categories",
+   "fieldtype": "Small Text",
+   "label": "Categories"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_notes",
+   "fieldtype": "Section Break",
+   "label": "Notes"
+  },
+  {
+   "fieldname": "personal_notes",
+   "fieldtype": "Text",
+   "label": "Notes"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-07-01 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "itsyncs",
+ "name": "ITSync Contact",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "search_fields": "display_name,company_name,address_book",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "display_name",
+ "track_changes": 1
+}

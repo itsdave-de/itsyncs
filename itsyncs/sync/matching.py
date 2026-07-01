@@ -3,7 +3,13 @@ import json
 
 
 def compute_field_hash(contact: dict) -> str:
-	"""Compute a SHA-256 hash of the relevant contact fields for change detection."""
+	"""Compute a SHA-256 hash of the relevant contact fields for change detection.
+
+	The base field set is unchanged. Extended O365 fields (middle name, birthday,
+	home phones/addresses, categories, …) are folded in ONLY when they carry a
+	value — so a contact without them hashes byte-identically to before. Existing
+	pairs whose contacts don't populate these fields therefore never re-baseline.
+	"""
 	normalized = {
 		"display_name": (contact.get("display_name") or "").strip().lower(),
 		"given_name": (contact.get("given_name") or "").strip().lower(),
@@ -19,6 +25,33 @@ def compute_field_hash(contact: dict) -> str:
 		"office_location": (contact.get("office_location") or "").strip().lower(),
 		"business_address": _normalize_address(contact.get("business_address")),
 	}
+
+	# --- Extended O365 fields, added only when populated (backward-stable) ---
+	for key in (
+		"middle_name", "nickname", "title", "generation", "initials",
+		"profession", "business_home_page", "manager", "assistant_name", "spouse_name",
+	):
+		val = (contact.get(key) or "").strip().lower()
+		if val:
+			normalized[key] = val
+
+	birthday = (contact.get("birthday") or "").strip()
+	if birthday:
+		normalized["birthday"] = birthday[:10]
+
+	home_phones = sorted(contact.get("home_phones") or [])
+	if home_phones:
+		normalized["home_phones"] = home_phones
+
+	for key in ("home_address", "other_address"):
+		addr = _normalize_address(contact.get(key))
+		if addr:
+			normalized[key] = addr
+
+	categories = sorted(c.strip().lower() for c in (contact.get("categories") or []) if c.strip())
+	if categories:
+		normalized["categories"] = categories
+
 	raw = json.dumps(normalized, sort_keys=True, ensure_ascii=False)
 	return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 

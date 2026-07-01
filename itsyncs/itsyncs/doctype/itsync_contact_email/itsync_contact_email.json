@@ -1,0 +1,50 @@
+{
+ "actions": [],
+ "creation": "2026-07-01 09:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "email_address",
+  "email_name",
+  "is_primary"
+ ],
+ "fields": [
+  {
+   "columns": 5,
+   "fieldname": "email_address",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Email",
+   "options": "Email",
+   "reqd": 1
+  },
+  {
+   "columns": 4,
+   "fieldname": "email_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Display Name"
+  },
+  {
+   "columns": 1,
+   "default": "0",
+   "fieldname": "is_primary",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Primary"
+  }
+ ],
+ "istable": 1,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-07-01 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "itsyncs",
+ "name": "ITSync Contact Email",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
