@@ -53,16 +53,19 @@ def _is_gal_eligible(contact):
 
 
 def _get_client_for_connector(connector):
-	"""Create the appropriate API client for a connector, or None for Sage SQL."""
-	if connector.connector_type == "Sage SQL":
+	"""Create the appropriate API client, or None for tenant-less connectors.
+
+	Sage SQL and CardDAV have no Microsoft tenant — they need no Graph client.
+	"""
+	if connector.connector_type in ("Sage SQL", "CardDAV", "Address Book"):
 		return None
 	tenant = frappe.get_doc("ITSync Tenant", connector.tenant)
 	return get_graph_client(tenant)
 
 
 def _get_tenant_for_connector(connector):
-	"""Get the tenant doc for a connector, or None for Sage SQL."""
-	if connector.connector_type == "Sage SQL":
+	"""Get the tenant doc for a connector, or None for tenant-less connectors."""
+	if connector.connector_type in ("Sage SQL", "CardDAV", "Address Book"):
 		return None
 	return frappe.get_doc("ITSync Tenant", connector.tenant)
 
@@ -427,13 +430,12 @@ def _run_initial_sync(pair, source_conn, target_conn, source_client, target_clie
 			total, processed,
 		)
 	else:
-		target_folder = target_conn.contact_folder or None
 		pending_lines = []
 		for sc in to_create:
 			processed += 1
 			display = sc.get("display_name") or get_primary_email(sc) or "?"
 			try:
-				new_id = create_contact(target_tenant, target_conn.email_address, sc, target_folder)
+				new_id = _target_create(target_conn, target_tenant, sc)
 				_create_mapping(pair.name, sc, new_id)
 				counts["created"] += 1
 				pending_lines.append(f"[{_timestamp()}] created: {display}")
@@ -607,10 +609,7 @@ def _reconcile_unmapped(pair, source_conn, target_conn, source_client, target_cl
 			continue
 		display = c.get("display_name") or get_primary_email(c) or "?"
 		try:
-			if target_is_gal:
-				update_mail_contact(target_tenant, m.target_id, c)
-			else:
-				update_contact(target_tenant, target_conn.email_address, m.target_id, c)
+			_target_update(target_conn, target_tenant, m.target_id, c)
 			frappe.db.set_value("ITSync Mapping", m.name, {
 				"field_hash": new_hash,
 				"last_synced": frappe.utils.now_datetime(),
@@ -719,11 +718,10 @@ def _reconcile_unmapped(pair, source_conn, target_conn, source_client, target_cl
 				total=len(to_create), processed_start=0,
 			)
 		else:
-			target_folder = target_conn.contact_folder or None
 			for c in to_create:
 				display = c.get("display_name") or get_primary_email(c) or "?"
 				try:
-					new_id = create_contact(target_tenant, target_conn.email_address, c, target_folder)
+					new_id = _target_create(target_conn, target_tenant, c)
 					_create_mapping(pair.name, c, new_id)
 					counts["created"] += 1
 				except Exception as e:
@@ -780,6 +778,11 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 			new_tokens["org"] = new_token_org
 		if new_tokens:
 			pair.db_set("delta_token", json.dumps(new_tokens))
+	elif source_conn.connector_type == "Address Book":
+		from itsyncs.native.contacts import fetch_native_delta
+
+		changed, deleted_ids, new_token = fetch_native_delta(source_conn, pair.delta_token, pair.name)
+		pair.db_set("delta_token", new_token)
 	else:
 		source_folder = source_conn.contact_folder or None
 		changed, _, deleted_ids, new_delta_token = fetch_contact_delta(
@@ -792,7 +795,6 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 			pair.db_set("delta_token", new_delta_token)
 
 	target_is_gal = target_conn.connector_type == "GAL"
-	target_folder = target_conn.contact_folder or None
 
 	total = len(changed) + len(deleted_ids)
 	_append_log_lines(log_name, [
@@ -844,10 +846,7 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 						f"[{_timestamp()}] skipped (existing conflict): {display}"
 					)
 				elif mapping.field_hash != new_hash:
-					if target_is_gal:
-						update_mail_contact(target_tenant, mapping.target_id, contact)
-					else:
-						update_contact(target_tenant, target_conn.email_address, mapping.target_id, contact)
+					_target_update(target_conn, target_tenant, mapping.target_id, contact)
 					frappe.db.set_value("ITSync Mapping", mapping.name, {
 						"field_hash": new_hash,
 						"last_synced": frappe.utils.now_datetime(),
@@ -861,10 +860,7 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 					counts["skipped"] += 1
 			else:
 				try:
-					if target_is_gal:
-						new_id = create_mail_contact(target_tenant, contact)
-					else:
-						new_id = create_contact(target_tenant, target_conn.email_address, contact, target_folder)
+					new_id = _target_create(target_conn, target_tenant, contact)
 					_create_mapping(pair.name, contact, new_id)
 					counts["created"] += 1
 					pending_lines.append(f"[{_timestamp()}] created: {display}")
@@ -913,10 +909,7 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 						f"[{_timestamp()}] removed conflict mapping for source_id {source_id} (source deleted)"
 					)
 				elif mapping.target_id:
-					if target_is_gal:
-						delete_mail_contact(target_tenant, mapping.target_id)
-					else:
-						delete_contact(target_tenant, target_conn.email_address, mapping.target_id)
+					_target_delete(target_conn, target_tenant, mapping.target_id)
 					frappe.delete_doc("ITSync Mapping", mapping.name, ignore_permissions=True)
 					counts["deleted"] += 1
 					pending_lines.append(f"[{_timestamp()}] deleted mapping for source_id {source_id}")
@@ -962,6 +955,10 @@ def _fetch_source_contacts(client, source_conn):
 		return fetch_all_contacts(client, source_conn.email_address, source_conn.contact_folder or None)
 	elif source_conn.connector_type == "GAL":
 		return fetch_all_gal_entries(client, source_conn.gal_include)
+	elif source_conn.connector_type == "Address Book":
+		from itsyncs.native.contacts import fetch_all_native_contacts
+
+		return fetch_all_native_contacts(source_conn)
 	return []
 
 
@@ -971,7 +968,65 @@ def _fetch_target_contacts(client, target_conn, target_tenant):
 		return fetch_all_contacts(client, target_conn.email_address, target_conn.contact_folder or None)
 	elif target_conn.connector_type == "GAL":
 		return fetch_all_mail_contacts(target_tenant)
+	elif target_conn.connector_type == "CardDAV":
+		from itsyncs.carddav.contacts import fetch_all_carddav_contacts
+
+		return fetch_all_carddav_contacts(target_conn)
+	elif target_conn.connector_type == "Address Book":
+		from itsyncs.native.contacts import fetch_all_native_contacts
+
+		return fetch_all_native_contacts(target_conn)
 	return []
+
+
+def _target_create(target_conn, target_tenant, contact):
+	"""Create a contact in the target connector. Returns the new target id."""
+	ct = target_conn.connector_type
+	if ct == "GAL":
+		return create_mail_contact(target_tenant, contact)
+	if ct == "CardDAV":
+		from itsyncs.carddav.contacts import create_carddav_contact
+
+		return create_carddav_contact(target_conn, contact)
+	if ct == "Address Book":
+		from itsyncs.native.contacts import create_native_contact
+
+		return create_native_contact(target_conn, contact)
+	return create_contact(target_tenant, target_conn.email_address, contact, target_conn.contact_folder or None)
+
+
+def _target_update(target_conn, target_tenant, target_id, contact):
+	"""Update an existing contact in the target connector."""
+	ct = target_conn.connector_type
+	if ct == "GAL":
+		update_mail_contact(target_tenant, target_id, contact)
+	elif ct == "CardDAV":
+		from itsyncs.carddav.contacts import update_carddav_contact
+
+		update_carddav_contact(target_conn, target_id, contact)
+	elif ct == "Address Book":
+		from itsyncs.native.contacts import update_native_contact
+
+		update_native_contact(target_conn, target_id, contact)
+	else:
+		update_contact(target_tenant, target_conn.email_address, target_id, contact)
+
+
+def _target_delete(target_conn, target_tenant, target_id):
+	"""Delete a contact from the target connector."""
+	ct = target_conn.connector_type
+	if ct == "GAL":
+		delete_mail_contact(target_tenant, target_id)
+	elif ct == "CardDAV":
+		from itsyncs.carddav.contacts import delete_carddav_contact
+
+		delete_carddav_contact(target_conn, target_id)
+	elif ct == "Address Book":
+		from itsyncs.native.contacts import delete_native_contact
+
+		delete_native_contact(target_conn, target_id)
+	else:
+		delete_contact(target_tenant, target_conn.email_address, target_id)
 
 
 def _find_mapping(pair_name, source_id, fields):
@@ -1085,3 +1140,6 @@ def _store_delta_tokens(pair, source_conn, source_client):
 			tokens["org"] = token_org
 		if tokens:
 			pair.db_set("delta_token", json.dumps(tokens))
+	elif source_conn.connector_type == "Address Book":
+		# Timestamp watermark: incremental picks up contacts modified after now.
+		pair.db_set("delta_token", frappe.utils.now_datetime().isoformat())

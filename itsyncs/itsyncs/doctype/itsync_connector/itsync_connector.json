@@ -20,6 +20,10 @@
   "contact_folder_name",
   "section_break_gal",
   "gal_include",
+  "section_break_carddav",
+  "carddav_collection",
+  "section_break_addressbook",
+  "address_book",
   "section_break_sage",
   "sql_host",
   "sql_port",
@@ -57,7 +61,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Connector Type",
-   "options": "Mailbox\nShared Mailbox\nGAL\nSage SQL",
+   "options": "Mailbox\nShared Mailbox\nGAL\nSage SQL\nCardDAV\nAddress Book",
    "reqd": 1
   },
   {
@@ -135,6 +139,34 @@
    "fieldtype": "Select",
    "label": "Include",
    "options": "Users\nOrg Contacts\nBoth"
+  },
+  {
+   "depends_on": "eval:doc.connector_type=='CardDAV'",
+   "fieldname": "section_break_carddav",
+   "fieldtype": "Section Break",
+   "label": "CardDAV Mobile Address Book"
+  },
+  {
+   "fieldname": "carddav_collection",
+   "fieldtype": "Data",
+   "label": "Collection Slug",
+   "description": "Address book name on the CardDAV server (auto-derived from title if left blank). Mobile devices subscribe to this collection read-only.",
+   "depends_on": "eval:doc.connector_type=='CardDAV'"
+  },
+  {
+   "depends_on": "eval:doc.connector_type=='Address Book'",
+   "fieldname": "section_break_addressbook",
+   "fieldtype": "Section Break",
+   "label": "Native Address Book"
+  },
+  {
+   "description": "The native itsyncs address book this connector reads from / writes to. Usable as both sync source and target.",
+   "fieldname": "address_book",
+   "fieldtype": "Link",
+   "label": "Address Book",
+   "options": "ITSync Address Book",
+   "depends_on": "eval:doc.connector_type=='Address Book'",
+   "mandatory_depends_on": "eval:doc.connector_type=='Address Book'"
   },
   {
    "depends_on": "eval:doc.connector_type=='Sage SQL'",

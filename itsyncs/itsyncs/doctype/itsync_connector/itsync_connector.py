@@ -8,6 +8,18 @@ class ITSyncConnector(Document):
 			self.is_writable = 0
 			self.email_address = None
 			self.tenant = None
+		elif self.connector_type == "CardDAV":
+			self.is_writable = 1
+			self.email_address = None
+			self.tenant = None
+			if not self.carddav_collection:
+				self.carddav_collection = frappe.scrub(self.title or "address-book").replace("_", "-")
+		elif self.connector_type == "Address Book":
+			self.is_writable = 1
+			self.email_address = None
+			self.tenant = None
+			if not self.address_book:
+				frappe.throw("Address Book is required for Address Book connectors.")
 		elif self.connector_type == "GAL":
 			self.is_writable = 1
 			self.email_address = None
@@ -57,6 +69,14 @@ class ITSyncConnector(Document):
 			self._test_sage_connection()
 			return
 
+		if self.connector_type == "CardDAV":
+			self._test_carddav_target()
+			return
+
+		if self.connector_type == "Address Book":
+			self._test_address_book()
+			return
+
 		from itsyncs.graph.client import get_graph_client
 
 		tenant = frappe.get_doc("ITSync Tenant", self.tenant)
@@ -101,6 +121,42 @@ class ITSyncConnector(Document):
 		except Exception as e:
 			self.connection_status = "Failed"
 			frappe.throw(f"SQL Server connection test failed: {e!s}")
+
+	def _test_carddav_target(self):
+		"""Materialize the CardDAV address book collection and count its vCards."""
+		try:
+			from itsyncs.carddav import store
+
+			store.ensure_collection(self.carddav_collection, self.title)
+			self.contact_count = len(store.read_all_vcards(self.carddav_collection))
+			self.connection_status = "Connected"
+			self.last_validated = frappe.utils.now_datetime()
+			frappe.msgprint(
+				f"CardDAV address book ready. {self.contact_count} contacts in collection "
+				f"<b>{self.carddav_collection}</b>.",
+				alert=True,
+				indicator="green",
+			)
+		except Exception as e:
+			self.connection_status = "Failed"
+			frappe.throw(f"CardDAV target setup failed: {e!s}")
+
+	def _test_address_book(self):
+		"""Validate the linked native address book and count its contacts."""
+		try:
+			if not frappe.db.exists("ITSync Address Book", self.address_book):
+				frappe.throw(f"Address book '{self.address_book}' does not exist.")
+			self.contact_count = frappe.db.count("ITSync Contact", {"address_book": self.address_book})
+			self.connection_status = "Connected"
+			self.last_validated = frappe.utils.now_datetime()
+			frappe.msgprint(
+				f"Address book <b>{self.address_book}</b> ready. {self.contact_count} contacts.",
+				alert=True,
+				indicator="green",
+			)
+		except Exception as e:
+			self.connection_status = "Failed"
+			frappe.throw(f"Address book check failed: {e!s}")
 
 	@frappe.whitelist()
 	def fetch_folders(self):

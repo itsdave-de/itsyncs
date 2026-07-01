@@ -27,8 +27,16 @@ scheduler_events = {
 		"*/5 * * * *": [
 			"itsyncs.tasks.run_due_syncs"
 		],
+		"0 6 * * *": [
+			"itsyncs.tasks.daily_sms_balance_check"
+		],
 	},
 	"daily": [
 		"itsyncs.tasks.cleanup_old_logs",
 	],
 }
+
+# Mobile enrollment landing page: /dav-enroll/<token> → www/dav_enroll
+website_route_rules = [
+	{"from_route": "/dav-enroll/<token>", "to_route": "dav_enroll"},
+]

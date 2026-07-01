@@ -1,0 +1,154 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-06-30 20:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "person_name",
+  "email",
+  "mobile_number",
+  "column_break_person",
+  "address_book",
+  "platform",
+  "status",
+  "section_break_access",
+  "dav_username",
+  "dav_password",
+  "column_break_access",
+  "enroll_token",
+  "enroll_expires_at",
+  "section_break_meta",
+  "enrolled_at",
+  "last_seen"
+ ],
+ "fields": [
+  {
+   "fieldname": "person_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Person",
+   "reqd": 1
+  },
+  {
+   "fieldname": "email",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Email",
+   "options": "Email"
+  },
+  {
+   "fieldname": "mobile_number",
+   "fieldtype": "Data",
+   "label": "Mobile Number",
+   "options": "Phone"
+  },
+  {
+   "fieldname": "column_break_person",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "address_book",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Address Book",
+   "options": "ITSync Connector",
+   "reqd": 1
+  },
+  {
+   "default": "Unknown",
+   "fieldname": "platform",
+   "fieldtype": "Select",
+   "label": "Platform",
+   "options": "Unknown\niOS\nAndroid"
+  },
+  {
+   "default": "Pending",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Pending\nActive\nRevoked"
+  },
+  {
+   "fieldname": "section_break_access",
+   "fieldtype": "Section Break",
+   "label": "CardDAV Access"
+  },
+  {
+   "description": "Auto-generated CardDAV username for this device.",
+   "fieldname": "dav_username",
+   "fieldtype": "Data",
+   "label": "CardDAV Username",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "dav_password",
+   "fieldtype": "Password",
+   "label": "CardDAV Password",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_access",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Token for the enrollment landing page URL (delivery of credentials only — not used for ongoing sync).",
+   "fieldname": "enroll_token",
+   "fieldtype": "Data",
+   "label": "Enrollment Token",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "description": "Ablauf des Einrichtungs-Links. Danach ist der Link ungültig; per 'Link neu erzeugen' erneuerbar. Leer = kein Ablauf.",
+   "fieldname": "enroll_expires_at",
+   "fieldtype": "Datetime",
+   "label": "Link gültig bis",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_meta",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "enrolled_at",
+   "fieldtype": "Datetime",
+   "label": "Enrolled At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_seen",
+   "fieldtype": "Datetime",
+   "label": "Last Seen",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-06-30 20:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "itsyncs",
+ "name": "ITSync Mobile Device",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

@@ -19,6 +19,15 @@ def run_due_syncs():
 	_enqueue_due_syncs()
 
 
+def daily_sms_balance_check():
+	"""Scheduler entry: if enabled, refresh + store the seven.io balance."""
+	if not frappe.db.get_single_value("ITSync Settings", "sms_balance_daily_check"):
+		return
+	from itsyncs.carddav.notify import check_and_store_balance
+
+	check_and_store_balance()
+
+
 def _watchdog_cleanup():
 	"""Reconcile 'Running' pairs against the actual RQ state.
 

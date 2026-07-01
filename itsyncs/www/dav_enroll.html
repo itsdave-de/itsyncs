@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+	<title>{{ book_label }} · Einrichten</title>
+	<style>
+		:root { --card:#ffffff; --ink:#0f172a; --muted:#64748b; --accent:#2563eb; --line:#e2e8f0; }
+		* { box-sizing: border-box; }
+		body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+			background:linear-gradient(160deg,#1e293b,#0f172a); color:var(--ink); min-height:100vh;
+			display:flex; align-items:center; justify-content:center; padding:24px; }
+		.card { background:var(--card); border-radius:20px; max-width:440px; width:100%;
+			box-shadow:0 24px 60px rgba(0,0,0,.35); overflow:hidden; }
+		.hd { padding:28px 28px 8px; }
+		.hd h1 { margin:0 0 4px; font-size:22px; }
+		.hd p { margin:0; color:var(--muted); font-size:14px; }
+		.bd { padding:8px 28px 28px; }
+		.btn { display:block; width:100%; text-align:center; text-decoration:none; background:var(--accent);
+			color:#fff; padding:15px; border-radius:12px; font-weight:600; font-size:16px; margin:16px 0; border:0; cursor:pointer; }
+		.seg { display:flex; gap:6px; margin:6px 0 14px; }
+		.seg button { flex:1; padding:9px; border:1px solid var(--line); background:#fff; border-radius:9px;
+			font-size:13px; cursor:pointer; color:var(--muted); }
+		.seg button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+		.pane { display:none; }
+		.pane.on { display:block; }
+		.step { display:flex; gap:12px; padding:12px 0; border-top:1px solid var(--line); }
+		.step .n { flex:0 0 26px; height:26px; border-radius:50%; background:var(--accent); color:#fff;
+			font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+		.step .t { font-size:14px; line-height:1.45; }
+		.creds { background:#f8fafc; border:1px solid var(--line); border-radius:12px; padding:14px; margin-top:14px; font-size:13px; }
+		.creds div { display:flex; justify-content:space-between; gap:10px; padding:4px 0; }
+		.creds .k { color:var(--muted); }
+		.creds .v { font-family:ui-monospace,Menlo,monospace; word-break:break-all; text-align:right; }
+		.qr { text-align:center; margin:18px 0 4px; }
+		.qr img { width:200px; height:200px; border-radius:12px; border:1px solid var(--line); }
+		.store { display:flex; gap:10px; margin-top:10px; }
+		.store a { flex:1; text-align:center; text-decoration:none; border:1px solid var(--line);
+			border-radius:10px; padding:10px; font-size:13px; color:var(--ink); }
+		.foot { padding:16px 28px; background:#f8fafc; color:var(--muted); font-size:12px; text-align:center; }
+	</style>
+</head>
+<body>
+	<div class="card">
+		<div class="hd">
+			<h1>{{ book_label }}</h1>
+			<p>Hallo {{ person_name }} — richte deine Firmenkontakte schreibgeschützt auf deinem Handy ein.</p>
+		</div>
+		<div class="bd">
+			<div class="seg">
+				<button data-t="ios" class="on">iPhone</button>
+				<button data-t="android">Android</button>
+				<button data-t="desktop">Anderes</button>
+			</div>
+
+			<div class="pane on" id="ios">
+				<a class="btn" href="{{ profile_url }}">Profil installieren</a>
+				<div class="step"><div class="n">1</div><div class="t">Auf <b>Profil installieren</b> tippen und den Download bestätigen.</div></div>
+				<div class="step"><div class="n">2</div><div class="t"><b>Einstellungen → Profil geladen</b> öffnen und installieren.</div></div>
+				<div class="step"><div class="n">3</div><div class="t">Fertig — die Kontakte erscheinen in der <b>Kontakte-App</b>.</div></div>
+			</div>
+
+			<div class="pane" id="android">
+				<div class="step"><div class="n">1</div><div class="t">Installiere <b>DAVx⁵</b> (kostenlos):</div></div>
+				<div class="store">
+					<a href="https://play.google.com/store/apps/details?id=at.bitfire.davdroid" target="_blank" rel="noopener">Play Store</a>
+					<a href="https://f-droid.org/packages/at.bitfire.davdroid/" target="_blank" rel="noopener">F-Droid</a>
+				</div>
+				<div class="step"><div class="n">2</div><div class="t">DAVx⁵ öffnen → <b>+</b> → <b>Mit URL und Benutzername anmelden</b>. Oder den QR-Code unten scannen.</div></div>
+				<div class="qr"><img src="{{ qr_uri }}" alt="QR"></div>
+				<div class="creds">
+					<div><span class="k">Server / URL</span><span class="v">{{ collection_url }}</span></div>
+					<div><span class="k">Benutzername</span><span class="v">{{ dav_username }}</span></div>
+					<div><span class="k">Passwort</span><span class="v">{{ dav_password }}</span></div>
+				</div>
+				<div class="step"><div class="n">3</div><div class="t">Konto anlegen, <b>Kontakte</b> aktivieren, synchronisieren. Fertig.</div></div>
+			</div>
+
+			<div class="pane" id="desktop">
+				<div class="step"><div class="n">1</div><div class="t">Diese Einrichtung läuft auf dem <b>Handy</b>. Scanne den QR-Code mit deinem Smartphone:</div></div>
+				<div class="qr"><img src="{{ qr_uri }}" alt="QR"></div>
+				<div class="creds">
+					<div><span class="k">Server / URL</span><span class="v">{{ collection_url }}</span></div>
+					<div><span class="k">Benutzername</span><span class="v">{{ dav_username }}</span></div>
+					<div><span class="k">Passwort</span><span class="v">{{ dav_password }}</span></div>
+				</div>
+				<div class="step"><div class="n">2</div><div class="t"><b>iPhone:</b> Einstellungen → Kontakte → Accounts → Account hinzufügen → Anderer → CardDAV-Account.</div></div>
+				<div class="step"><div class="n">3</div><div class="t"><b>Android:</b> DAVx⁵ installieren und obige Zugangsdaten eintragen.</div></div>
+			</div>
+		</div>
+		<div class="foot">Schreibgeschützt · Bereitgestellt von itsyncs</div>
+	</div>
+
+	<script>
+		(function () {
+			var ua = navigator.userAgent || "";
+			var t = "desktop";
+			if (/iPhone|iPad|iPod/i.test(ua)) t = "ios";
+			else if (/Android/i.test(ua)) t = "android";
+			function show(name) {
+				document.querySelectorAll(".pane").forEach(function (p) { p.classList.toggle("on", p.id === name); });
+				document.querySelectorAll(".seg button").forEach(function (b) { b.classList.toggle("on", b.dataset.t === name); });
+			}
+			show(t);
+			document.querySelectorAll(".seg button").forEach(function (b) {
+				b.addEventListener("click", function () { show(b.dataset.t); });
+			});
+		})();
+	</script>
+</body>
+</html>

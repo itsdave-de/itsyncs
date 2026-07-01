@@ -56,3 +56,4 @@ jspm_packages/
 
 # Debug scripts (may contain interpolated secrets at runtime)
 debug*.py
+.playwright-mcp/

@@ -6,7 +6,17 @@
  "field_order": [
   "section_cleanup",
   "cleanup_logs_enabled",
-  "cleanup_logs_max_age_days"
+  "cleanup_logs_max_age_days",
+  "section_sms",
+  "sms_api_key",
+  "sms_sender",
+  "sms_balance_daily_check",
+  "column_break_sms",
+  "sms_balance",
+  "sms_balance_checked_at",
+  "sms_balance_result",
+  "section_enroll",
+  "enroll_token_validity_hours"
  ],
  "fields": [
   {
@@ -28,6 +38,66 @@
    "fieldname": "cleanup_logs_max_age_days",
    "fieldtype": "Int",
    "label": "Max. Alter (Tage)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "section_sms",
+   "fieldtype": "Section Break",
+   "label": "SMS-Versand (seven.io)"
+  },
+  {
+   "description": "API-Schlüssel aus dem seven.io Developer-Bereich (app.seven.io/developer). Wird für den Versand der Enrollment-Einladungen per SMS verwendet.",
+   "fieldname": "sms_api_key",
+   "fieldtype": "Password",
+   "label": "seven.io API Key"
+  },
+  {
+   "default": "itsyncs",
+   "description": "Absenderkennung (max. 11 alphanumerische oder 16 numerische Zeichen). Leer lassen für seven.io-Standard.",
+   "fieldname": "sms_sender",
+   "fieldtype": "Data",
+   "label": "Absender"
+  },
+  {
+   "default": "0",
+   "description": "Wenn aktiv, wird das seven.io-Guthaben täglich um 06:00 automatisch geprüft und unten festgehalten.",
+   "fieldname": "sms_balance_daily_check",
+   "fieldtype": "Check",
+   "label": "Guthaben täglich prüfen (06:00)"
+  },
+  {
+   "fieldname": "column_break_sms",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sms_balance",
+   "fieldtype": "Data",
+   "label": "Letztes Guthaben",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sms_balance_checked_at",
+   "fieldtype": "Datetime",
+   "label": "Zuletzt geprüft",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sms_balance_result",
+   "fieldtype": "Small Text",
+   "label": "Ergebnis",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_enroll",
+   "fieldtype": "Section Break",
+   "label": "Mobile-Enrollment"
+  },
+  {
+   "default": "1",
+   "description": "Gültigkeitsdauer des Einrichtungs-Links (in Stunden) ab Versand. Danach muss ein neuer Link erzeugt werden. 0 = kein Ablauf. Betrifft nur die Einrichtung — der laufende Kontakt-Sync nutzt die CardDAV-Zugangsdaten und ist davon unberührt.",
+   "fieldname": "enroll_token_validity_hours",
+   "fieldtype": "Int",
+   "label": "Einrichtungs-Link gültig (Stunden)",
    "non_negative": 1
   }
  ],

@@ -1,7 +1,7 @@
 {
  "app": "itsyncs",
  "charts": [],
- "content": "[{\"id\":\"itsync_header_1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Contact Sync</b></span>\",\"col\":12}},{\"id\":\"itsync_card_sync\",\"type\":\"card\",\"data\":{\"card_name\":\"Sync Configuration\",\"col\":4}},{\"id\":\"itsync_card_monitoring\",\"type\":\"card\",\"data\":{\"card_name\":\"Monitoring\",\"col\":4}},{\"id\":\"itsync_card_setup\",\"type\":\"card\",\"data\":{\"card_name\":\"Setup\",\"col\":4}},{\"id\":\"itsync_card_backup\",\"type\":\"card\",\"data\":{\"card_name\":\"Backup\",\"col\":4}}]",
+ "content": "[{\"id\":\"itsync_header_1\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Contact Sync</b></span>\",\"col\":12}},{\"id\":\"itsync_card_sync\",\"type\":\"card\",\"data\":{\"card_name\":\"Sync Configuration\",\"col\":4}},{\"id\":\"itsync_card_monitoring\",\"type\":\"card\",\"data\":{\"card_name\":\"Monitoring\",\"col\":4}},{\"id\":\"itsync_card_setup\",\"type\":\"card\",\"data\":{\"card_name\":\"Setup\",\"col\":4}},{\"id\":\"itsync_card_backup\",\"type\":\"card\",\"data\":{\"card_name\":\"Backup\",\"col\":4}},{\"id\":\"itsync_card_mobile\",\"type\":\"card\",\"data\":{\"card_name\":\"Mobile\",\"col\":4}},{\"id\":\"itsync_card_books\",\"type\":\"card\",\"data\":{\"card_name\":\"Adressbücher\",\"col\":4}}]",
  "creation": "2026-03-18 14:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -45,7 +45,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Monitoring",
-   "link_count": 2,
+   "link_count": 3,
    "onboard": 0,
    "type": "Card Break"
   },
@@ -65,6 +65,16 @@
    "label": "ITSync Mapping",
    "link_count": 0,
    "link_to": "ITSync Mapping",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "ITSync SMS Log",
+   "link_count": 0,
+   "link_to": "ITSync SMS Log",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -114,9 +124,55 @@
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Mobile",
+   "link_count": 1,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "ITSync Mobile Device",
+   "link_count": 0,
+   "link_to": "ITSync Mobile Device",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Adressbücher",
+   "link_count": 2,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "ITSync Address Book",
+   "link_count": 0,
+   "link_to": "ITSync Address Book",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "ITSync Contact",
+   "link_count": 0,
+   "link_to": "ITSync Contact",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
   }
  ],
- "modified": "2026-05-24 12:00:00.000000",
+ "modified": "2026-07-01 10:30:00.000000",
  "modified_by": "Administrator",
  "module": "itsyncs",
  "name": "itsyncs",
