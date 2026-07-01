@@ -16,7 +16,16 @@
   "sms_balance_checked_at",
   "sms_balance_result",
   "section_enroll",
-  "enroll_token_validity_hours"
+  "enroll_token_validity_hours",
+  "section_radicale",
+  "radicale_enabled",
+  "column_break_radicale",
+  "radicale_status",
+  "radicale_status_checked_at",
+  "carddav_public_status",
+  "carddav_cert_expiry",
+  "section_carddav_diag",
+  "carddav_diagnostics_html"
  ],
  "fields": [
   {
@@ -99,6 +108,56 @@
    "fieldtype": "Int",
    "label": "Einrichtungs-Link gültig (Stunden)",
    "non_negative": 1
+  },
+  {
+   "fieldname": "section_radicale",
+   "fieldtype": "Section Break",
+   "label": "CardDAV-Dienst (Radicale)"
+  },
+  {
+   "default": "0",
+   "description": "Wenn aktiv, hält ein Watchdog den Radicale-CardDAV-Dienst am Laufen (Auto-Start nach Absturz/Reboot).",
+   "fieldname": "radicale_enabled",
+   "fieldtype": "Check",
+   "label": "Radicale-Dienst aktiviert"
+  },
+  {
+   "fieldname": "column_break_radicale",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "radicale_status",
+   "fieldtype": "Data",
+   "label": "Radicale-Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "radicale_status_checked_at",
+   "fieldtype": "Datetime",
+   "label": "Status zuletzt geprüft",
+   "read_only": 1
+  },
+  {
+   "fieldname": "carddav_public_status",
+   "fieldtype": "Data",
+   "label": "Öffentliche URL",
+   "read_only": 1
+  },
+  {
+   "fieldname": "carddav_cert_expiry",
+   "fieldtype": "Datetime",
+   "label": "Zertifikat gültig bis",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_carddav_diag",
+   "fieldtype": "Section Break",
+   "label": "CardDAV-Diagnose"
+  },
+  {
+   "fieldname": "carddav_diagnostics_html",
+   "fieldtype": "HTML",
+   "label": "Diagnose"
   }
  ],
  "in_create": 1,

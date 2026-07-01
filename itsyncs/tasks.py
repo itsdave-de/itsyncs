@@ -28,6 +28,27 @@ def daily_sms_balance_check():
 	check_and_store_balance()
 
 
+def radicale_watchdog():
+	"""Reconcile the Radicale sidecar to the desired state + refresh diagnostics.
+
+	Self-healing: if enabled and not running (crash / host reboot) it is
+	restarted; if disabled and running it is stopped.
+	"""
+	from itsyncs.carddav import service
+
+	enabled = frappe.db.get_single_value("ITSync Settings", "radicale_enabled")
+	running = service.is_running()
+	if enabled and not running:
+		service.start()
+	elif not enabled and running:
+		service.stop()
+
+	# Persist status + certificate/URL diagnostics for the Settings page / DB.
+	from itsyncs.carddav import diagnostics
+
+	diagnostics.get_diagnostics()
+
+
 def _watchdog_cleanup():
 	"""Reconcile 'Running' pairs against the actual RQ state.
 

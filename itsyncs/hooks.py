@@ -25,7 +25,8 @@ app_include_icons = "/assets/itsyncs/icons/itsyncs.svg"
 scheduler_events = {
 	"cron": {
 		"*/5 * * * *": [
-			"itsyncs.tasks.run_due_syncs"
+			"itsyncs.tasks.run_due_syncs",
+			"itsyncs.tasks.radicale_watchdog"
 		],
 		"0 6 * * *": [
 			"itsyncs.tasks.daily_sms_balance_check"
