@@ -95,21 +95,28 @@ def apply_normalized(doc, data: dict) -> None:
 	doc.categories = ", ".join(cats) if isinstance(cats, list) else (cats or None)
 
 	doc.set("emails", [])
-	for i, e in enumerate(data.get("email_addresses") or []):
-		if e.get("address"):
-			doc.append("emails", {
-				"email_address": _cap(e["address"]),
-				"email_name": _cap(e.get("name")),
-				"is_primary": 1 if i == 0 else 0,
-			})
+	primary_assigned = False
+	for e in data.get("email_addresses") or []:
+		addr = (e.get("address") or "").strip()
+		if not addr:
+			continue
+		doc.append("emails", {
+			"email_address": _cap(addr),
+			"email_name": _cap(e.get("name")),
+			"is_primary": 0 if primary_assigned else 1,
+		})
+		primary_assigned = True
 
 	doc.set("phones", [])
 	for n in data.get("business_phones") or []:
-		doc.append("phones", {"number": _cap(n), "phone_type": "Business"})
+		if n and str(n).strip():
+			doc.append("phones", {"number": _cap(n), "phone_type": "Business"})
 	for n in data.get("home_phones") or []:
-		doc.append("phones", {"number": _cap(n), "phone_type": "Home"})
-	if data.get("mobile_phone"):
-		doc.append("phones", {"number": _cap(data["mobile_phone"]), "phone_type": "Mobile"})
+		if n and str(n).strip():
+			doc.append("phones", {"number": _cap(n), "phone_type": "Home"})
+	mobile = data.get("mobile_phone")
+	if mobile and str(mobile).strip():
+		doc.append("phones", {"number": _cap(mobile), "phone_type": "Mobile"})
 
 	doc.set("addresses", [])
 	for kind, key in (("Business", "business_address"), ("Home", "home_address"), ("Other", "other_address")):
