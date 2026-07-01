@@ -11,11 +11,11 @@
  "fields": [
   {
    "columns": 6,
+   "description": "Stored as-is from the source (a contact mirror may hold malformed numbers).",
    "fieldname": "number",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Number",
-   "options": "Phone",
    "reqd": 1
   },
   {
