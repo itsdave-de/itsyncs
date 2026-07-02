@@ -57,7 +57,7 @@ def download_profile(token: str):
 		base_url=device.dav_server_url(),
 		username=device.dav_username,
 		password=device.get_password("dav_password"),
-		principal_path=device.collection_path(),
+		principal_path=device.principal_path(),
 		book_label=book_label,
 	)
 

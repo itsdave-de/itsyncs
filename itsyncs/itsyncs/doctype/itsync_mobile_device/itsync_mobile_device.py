@@ -115,3 +115,7 @@ class ITSyncMobileDevice(Document):
 
 		slug = _slug(frappe.db.get_value("ITSync Connector", self.address_book, "carddav_collection") or self.address_book)
 		return f"/addressbooks/{slug}/"
+
+	def principal_path(self) -> str:
+		"""The device's principal collection — iOS starts discovery here."""
+		return f"/{self.dav_username}/"
