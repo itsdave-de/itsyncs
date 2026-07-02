@@ -47,6 +47,13 @@ function render_carddav_panel(frm, freeze) {
 		.catch(() => wrap.$wrapper.html(`<div class="text-danger">${__("Diagnose fehlgeschlagen")}</div>`));
 }
 
+function signing_cell(s) {
+	const esc = frappe.utils.escape_html;
+	if (!s || !s.configured) return `<span class="text-muted">${__("nicht konfiguriert (Profile unsigniert)")}</span>`;
+	if (!s.active) return `<span class="indicator-pill red">${esc(s.error || __("inaktiv"))}</span>`;
+	return `<span class="indicator-pill green">${__("aktiv")}</span> ${esc(s.subject || "")} · ${s.days_remaining} ${__("Tage")}`;
+}
+
 function build_carddav_html(d) {
 	const badge = (ok, y, n) => `<span class="indicator-pill ${ok ? "green" : "red"}">${ok ? y : n}</span>`;
 	const rad = d.radicale || {};
@@ -80,6 +87,7 @@ function build_carddav_html(d) {
 		<tr><td>${__("Öffentliche URL")}</td><td>${d.public_url ? `<a href="${esc(d.public_url)}" target="_blank">${esc(d.public_url)}</a>` : `<span class="text-muted">${__("nicht gesetzt (carddav_base_url)")}</span>`}</td></tr>
 		${certRow}
 		<tr><td>${__("Geräte")}</td><td>${d.devices.active} ${__("aktiv")} · ${d.devices.pending} ${__("ausstehend")} · ${d.devices.revoked} ${__("widerrufen")}</td></tr>
+		<tr><td>${__("Profil-Signierung")}</td><td>${signing_cell(d.profile_signing)}</td></tr>
 	  </table>
 	  <b>${__("Adressbücher (CardDAV)")}</b>
 	  <table class="table table-bordered" style="margin-top:6px">

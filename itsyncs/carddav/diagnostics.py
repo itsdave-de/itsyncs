@@ -93,6 +93,34 @@ def _collection_stats() -> list:
 	return out
 
 
+def _signing_status() -> dict:
+	"""Is .mobileconfig signing configured and usable?"""
+	cert_path = frappe.conf.get("carddav_profile_sign_cert")
+	key_path = frappe.conf.get("carddav_profile_sign_key")
+	if not (cert_path and key_path):
+		return {"configured": False}
+	if not (os.path.isfile(cert_path) and os.access(cert_path, os.R_OK)
+			and os.path.isfile(key_path) and os.access(key_path, os.R_OK)):
+		return {"configured": True, "active": False, "error": "Cert/Key-Datei fehlt oder nicht lesbar"}
+	try:
+		from cryptography import x509
+
+		with open(cert_path, "rb") as f:
+			cert = x509.load_pem_x509_certificates(f.read())[0]
+		try:
+			not_after = cert.not_valid_after_utc
+		except AttributeError:
+			not_after = cert.not_valid_after.replace(tzinfo=datetime.timezone.utc)
+		return {
+			"configured": True,
+			"active": True,
+			"subject": cert.subject.rfc4514_string(),
+			"days_remaining": (not_after - _now_utc()).days,
+		}
+	except Exception as e:
+		return {"configured": True, "active": False, "error": str(e)[:100]}
+
+
 def get_diagnostics() -> dict:
 	from itsyncs.carddav import service
 
@@ -114,6 +142,7 @@ def get_diagnostics() -> dict:
 			"pending": frappe.db.count("ITSync Mobile Device", {"status": "Pending"}),
 			"revoked": frappe.db.count("ITSync Mobile Device", {"status": "Revoked"}),
 		},
+		"profile_signing": _signing_status(),
 		"checked_at": frappe.utils.now_datetime().isoformat(),
 	}
 
