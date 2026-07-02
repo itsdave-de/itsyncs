@@ -60,3 +60,39 @@ def build_carddav_mobileconfig(
 		"PayloadContent": [carddav_payload],
 	}
 	return plistlib.dumps(profile)
+
+
+def sign_mobileconfig(data: bytes) -> bytes:
+	"""CMS/PKCS#7-sign a profile so iOS shows it as verified.
+
+	Uses the PEM cert/key configured in site config (typically the public TLS
+	certificate of the CardDAV domain, e.g. the Let's Encrypt fullchain — iOS
+	then displays the domain as the verified signer). Unconfigured → returns
+	the profile unsigned, so the feature is inert until set up.
+
+	Site config keys:
+	    carddav_profile_sign_cert  (PEM, fullchain: signer first, then chain)
+	    carddav_profile_sign_key   (PEM private key, unencrypted)
+	"""
+	import frappe
+
+	cert_path = frappe.conf.get("carddav_profile_sign_cert")
+	key_path = frappe.conf.get("carddav_profile_sign_key")
+	if not (cert_path and key_path):
+		return data
+
+	from cryptography import x509
+	from cryptography.hazmat.primitives import hashes
+	from cryptography.hazmat.primitives.serialization import Encoding, load_pem_private_key, pkcs7
+
+	with open(cert_path, "rb") as f:
+		certs = x509.load_pem_x509_certificates(f.read())
+	with open(key_path, "rb") as f:
+		key = load_pem_private_key(f.read(), password=None)
+
+	builder = pkcs7.PKCS7SignatureBuilder().set_data(data).add_signer(certs[0], key, hashes.SHA256())
+	for extra in certs[1:]:
+		builder = builder.add_certificate(extra)
+	# No DetachedSignature option → the profile is embedded in the CMS envelope,
+	# which is the format iOS expects for signed .mobileconfig files.
+	return builder.sign(Encoding.DER, [])

@@ -47,7 +47,7 @@ def qr_data_uri(text: str) -> str:
 @frappe.whitelist(allow_guest=True)
 def download_profile(token: str):
 	"""Return the iOS .mobileconfig for the device behind this token."""
-	from itsyncs.carddav.mobileconfig import build_carddav_mobileconfig
+	from itsyncs.carddav.mobileconfig import build_carddav_mobileconfig, sign_mobileconfig
 
 	device = get_device_by_token(token)
 	book_label = frappe.db.get_value("ITSync Connector", device.address_book, "title") or "itsyncs Kontakte"
@@ -60,6 +60,7 @@ def download_profile(token: str):
 		principal_path=device.principal_path(),
 		book_label=book_label,
 	)
+	profile = sign_mobileconfig(profile)
 
 	_mark_active(device, "iOS")
 
