@@ -4,6 +4,8 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "section_sync_safety",
+  "delete_threshold_per_run",
   "section_cleanup",
   "cleanup_logs_enabled",
   "cleanup_logs_max_age_days",
@@ -28,6 +30,19 @@
   "carddav_diagnostics_html"
  ],
  "fields": [
+  {
+   "fieldname": "section_sync_safety",
+   "fieldtype": "Section Break",
+   "label": "Sync-Sicherheit"
+  },
+  {
+   "default": "25",
+   "description": "Sicherheitsstopp für Pairs mit 'On Source Delete = Delete': Meldet die Quelle in einem Lauf mehr Löschungen als hier angegeben, bricht der Lauf ab, ohne etwas zu löschen — der Delta-Stand bleibt erhalten, der nächste Lauf sieht dieselben Löschungen wieder. Schützt vor versehentlichen Massenlöschungen in der Quelle. 0 = Prüfung deaktiviert. Für beabsichtigte Massen-Bereinigungen temporär erhöhen.",
+   "fieldname": "delete_threshold_per_run",
+   "fieldtype": "Int",
+   "label": "Lösch-Limit pro Lauf",
+   "non_negative": 1
+  },
   {
    "fieldname": "section_cleanup",
    "fieldtype": "Section Break",

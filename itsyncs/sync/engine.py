@@ -739,6 +739,30 @@ def _reconcile_unmapped(pair, source_conn, target_conn, source_client, target_cl
 	frappe.db.commit()
 
 
+def _enforce_delete_threshold(pair, deleted_ids, log_name):
+	"""Abort the run before any delete (and before the delta token advances)
+	when the source reports implausibly many deletions in one pass. Guards the
+	fan-out targets against an accidental mass-deletion in the source and
+	against a faulty presence-compare (native source) reporting everything as
+	deleted. Intentional bulk cleanups: temporarily raise the limit in
+	ITSync Settings or set it to 0."""
+	if pair.on_delete != "Delete" or not deleted_ids:
+		return
+	raw = frappe.db.get_single_value("ITSync Settings", "delete_threshold_per_run")
+	threshold = 25 if raw in (None, "") else frappe.utils.cint(raw)
+	if threshold <= 0 or len(deleted_ids) <= threshold:
+		return
+	msg = (
+		f"Sicherheitsstopp: Quelle meldet {len(deleted_ids)} Löschungen in einem Lauf, "
+		f"Limit ist {threshold} (ITSync Settings → Lösch-Limit pro Lauf). "
+		f"Es wurde nichts gelöscht und der Delta-Stand nicht verändert — der nächste Lauf "
+		f"sieht dieselben Löschungen. Bei beabsichtigter Bereinigung das Limit temporär erhöhen."
+	)
+	_append_log_lines(log_name, [f"[{_timestamp()}] {msg}"])
+	frappe.db.commit()
+	frappe.throw(msg)
+
+
 def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_client, target_tenant, counts, error_details, log_name):
 	"""Incremental sync using delta queries.
 
@@ -755,13 +779,17 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 	_write_progress(log_name, 0, 0, "Fetching delta from source")
 	frappe.db.commit()
 
+	# The new delta token is stored only AFTER the delete-threshold check below:
+	# Graph/GAL deletion events are consumable — once the token advances they are
+	# gone, so an aborted run must leave the old token in place for the retry.
+	new_token_value = None
 	if source_conn.connector_type == "Sage SQL":
 		from itsyncs.sage.contacts import fetch_sage_delta
 
 		last_rv = int(pair.delta_token or "0")
 		changed, deleted_ids, new_rv = fetch_sage_delta(source_conn, last_rv)
 		if new_rv > last_rv:
-			pair.db_set("delta_token", str(new_rv))
+			new_token_value = str(new_rv)
 
 	elif source_conn.connector_type == "GAL":
 		delta_data = json.loads(pair.delta_token or "{}") if pair.delta_token else {}
@@ -777,12 +805,12 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 		if new_token_org:
 			new_tokens["org"] = new_token_org
 		if new_tokens:
-			pair.db_set("delta_token", json.dumps(new_tokens))
+			new_token_value = json.dumps(new_tokens)
 	elif source_conn.connector_type == "Address Book":
 		from itsyncs.native.contacts import fetch_native_delta
 
 		changed, deleted_ids, new_token = fetch_native_delta(source_conn, pair.delta_token, pair.name)
-		pair.db_set("delta_token", new_token)
+		new_token_value = new_token
 	else:
 		source_folder = source_conn.contact_folder or None
 		changed, _, deleted_ids, new_delta_token = fetch_contact_delta(
@@ -792,7 +820,11 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 			folder_id=source_folder,
 		)
 		if new_delta_token:
-			pair.db_set("delta_token", new_delta_token)
+			new_token_value = new_delta_token
+
+	_enforce_delete_threshold(pair, deleted_ids, log_name)
+	if new_token_value:
+		pair.db_set("delta_token", new_token_value)
 
 	target_is_gal = target_conn.connector_type == "GAL"
 
