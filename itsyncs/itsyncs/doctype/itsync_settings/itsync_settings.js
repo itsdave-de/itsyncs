@@ -49,9 +49,33 @@ function render_carddav_panel(frm, freeze) {
 
 function signing_cell(s) {
 	const esc = frappe.utils.escape_html;
-	if (!s || !s.configured) return `<span class="text-muted">${__("nicht konfiguriert (Profile unsigniert)")}</span>`;
-	if (!s.active) return `<span class="indicator-pill red">${esc(s.error || __("inaktiv"))}</span>`;
-	return `<span class="indicator-pill green">${__("aktiv")}</span> ${esc(s.subject || "")} · ${s.days_remaining} ${__("Tage")}`;
+	const hint = (html) => `<div class="text-muted" style="margin-top:4px;font-size:12px;line-height:1.5">${html}</div>`;
+
+	if (!s || !s.configured) {
+		return `<span class="text-muted">${__("nicht konfiguriert — Profile werden unsigniert ausgeliefert, iOS zeigt „Nicht signiert“")}</span>`
+			+ hint(__("Zum Aktivieren in der site_config.json {0} und {1} setzen — Fullchain-PEM (Leaf + Intermediates) und unverschlüsselter Key, z. B. das TLS-Zertifikat der CardDAV-Domain.",
+				["<code>carddav_profile_sign_cert</code>", "<code>carddav_profile_sign_key</code>"]));
+	}
+
+	if (!s.active) {
+		let h;
+		if (s.missing && s.missing.length) {
+			h = __("Erwartete Datei(en):") + "<br>" + s.missing.map((p) => `<code>${esc(p)}</code>`).join("<br>")
+				+ "<br>" + __("Dort Fullchain-Zertifikat und unverschlüsselten Key ablegen. Bis dahin werden Profile unsigniert ausgeliefert — iOS zeigt „Nicht signiert“.");
+		} else {
+			h = `<code>${esc(s.cert_path || "")}</code><br><code>${esc(s.key_path || "")}</code>`;
+		}
+		return `<span class="indicator-pill red">${esc(s.error || __("inaktiv"))}</span>` + hint(h);
+	}
+
+	const days = s.days_remaining;
+	const cls = days < 14 ? "red" : days < 30 ? "orange" : "green";
+	const warns = [];
+	if (s.self_signed) warns.push(esc(__("Zertifikat ist self-signed — iOS zeigt „Nicht überprüft“.")));
+	else if (s.chain_certs === 1) warns.push(esc(__("PEM enthält nur das Leaf-Zertifikat — ohne Intermediate-Chain zeigt iOS ggf. „Nicht überprüft“.")));
+	if (days < 30) warns.push(esc(__("Zertifikat läuft bald ab — nach der Erneuerung die Dateien im Signier-Pfad aktualisieren.")));
+	return `<span class="indicator-pill green">${__("aktiv")}</span> ${esc(s.subject || "")} · <span class="indicator-pill ${cls}">${days} ${__("Tage")}</span>`
+		+ (warns.length ? hint(warns.join("<br>")) : "");
 }
 
 function build_carddav_html(d) {

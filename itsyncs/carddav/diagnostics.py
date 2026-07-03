@@ -99,26 +99,46 @@ def _signing_status() -> dict:
 	key_path = frappe.conf.get("carddav_profile_sign_key")
 	if not (cert_path and key_path):
 		return {"configured": False}
-	if not (os.path.isfile(cert_path) and os.access(cert_path, os.R_OK)
-			and os.path.isfile(key_path) and os.access(key_path, os.R_OK)):
-		return {"configured": True, "active": False, "error": "Cert/Key-Datei fehlt oder nicht lesbar"}
+
+	out = {"configured": True, "cert_path": cert_path, "key_path": key_path}
+	missing = [p for p in (cert_path, key_path) if not (os.path.isfile(p) and os.access(p, os.R_OK))]
+	if missing:
+		out.update({"active": False, "missing": missing, "error": "Cert/Key-Datei fehlt oder nicht lesbar"})
+		return out
 	try:
 		from cryptography import x509
+		from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_private_key
 
 		with open(cert_path, "rb") as f:
-			cert = x509.load_pem_x509_certificates(f.read())[0]
+			certs = x509.load_pem_x509_certificates(f.read())
+		with open(key_path, "rb") as f:
+			key = load_pem_private_key(f.read(), password=None)
+		cert = certs[0]
 		try:
 			not_after = cert.not_valid_after_utc
 		except AttributeError:
 			not_after = cert.not_valid_after.replace(tzinfo=datetime.timezone.utc)
-		return {
-			"configured": True,
-			"active": True,
+
+		spki = lambda k: k.public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)  # noqa: E731
+		if spki(key.public_key()) != spki(cert.public_key()):
+			out.update({"active": False, "error": "Private Key passt nicht zum Zertifikat"})
+			return out
+
+		days = (not_after - _now_utc()).days
+		out.update({
+			"active": days >= 0,
 			"subject": cert.subject.rfc4514_string(),
-			"days_remaining": (not_after - _now_utc()).days,
-		}
+			"issuer": cert.issuer.rfc4514_string(),
+			"days_remaining": days,
+			"chain_certs": len(certs),
+			"self_signed": cert.issuer == cert.subject,
+		})
+		if days < 0:
+			out["error"] = "Zertifikat abgelaufen"
+		return out
 	except Exception as e:
-		return {"configured": True, "active": False, "error": str(e)[:100]}
+		out.update({"active": False, "error": str(e)[:100]})
+		return out
 
 
 def get_diagnostics() -> dict:
