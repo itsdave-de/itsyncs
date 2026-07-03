@@ -31,6 +31,9 @@ scheduler_events = {
 		"0 6 * * *": [
 			"itsyncs.tasks.daily_sms_balance_check"
 		],
+		"30 5 * * *": [
+			"itsyncs.tasks.run_consistency_audit"
+		],
 	},
 	"daily": [
 		"itsyncs.tasks.cleanup_old_logs",

@@ -39,7 +39,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Sync Type",
-   "options": "Initial\nIncremental\nManual"
+   "options": "Initial\nIncremental\nManual\nAudit"
   },
   {
    "default": "Running",

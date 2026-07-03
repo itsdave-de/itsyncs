@@ -25,6 +25,10 @@ frappe.ui.form.on("ITSync Settings", {
 
 		frm.add_custom_button(__("SMS-Protokoll"), () => frappe.set_route("List", "ITSync SMS Log"), __("SMS"));
 
+		frm.add_custom_button(__("Bestandsabgleich starten"), () => {
+			frm.call({ method: "run_consistency_audit_now", doc: frm.doc });
+		}, __("Sync"));
+
 		// --- CardDAV service controls ---
 		frm.add_custom_button(__("Radicale starten"), () => {
 			frm.call({ method: "start_radicale", doc: frm.doc, freeze: true }).always(() => { frm.reload_doc(); render_carddav_panel(frm); });

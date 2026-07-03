@@ -19,6 +19,24 @@ def run_due_syncs():
 	_enqueue_due_syncs()
 
 
+def run_consistency_audit():
+	"""Scheduler entry (täglich 05:30): Ziel-Bestandsabgleich, wenn aktiviert.
+	Bei Frequenz 'Wöchentlich' läuft er nur montags."""
+	settings = frappe.get_single("ITSync Settings")
+	if not settings.get("audit_enabled"):
+		return
+	if (settings.get("audit_frequency") or "Wöchentlich") == "Wöchentlich" and frappe.utils.now_datetime().weekday() != 0:
+		return
+	frappe.enqueue(
+		"itsyncs.sync.audit.run_audit",
+		queue="long",
+		timeout=3600,
+		job_id="itsync_consistency_audit",
+		deduplicate=True,
+		triggered_by="Zeitplan",
+	)
+
+
 def daily_sms_balance_check():
 	"""Scheduler entry: if enabled, refresh + store the seven.io balance."""
 	if not frappe.db.get_single_value("ITSync Settings", "sms_balance_daily_check"):

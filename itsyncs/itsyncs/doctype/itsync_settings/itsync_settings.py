@@ -39,6 +39,24 @@ class ITSyncSettings(Document):
 		return result
 
 	@frappe.whitelist()
+	def run_consistency_audit_now(self):
+		"""Start the target-consistency audit as a background job."""
+		frappe.only_for("System Manager")
+		frappe.enqueue(
+			"itsyncs.sync.audit.run_audit",
+			queue="long",
+			timeout=3600,
+			job_id="itsync_consistency_audit",
+			deduplicate=True,
+			triggered_by="Manuell",
+		)
+		frappe.msgprint(
+			frappe._("Bestandsabgleich gestartet — Ergebnis erscheint hier unter „Letzter Abgleich“ und pro Pair als Audit-Log."),
+			alert=True,
+			indicator="blue",
+		)
+
+	@frappe.whitelist()
 	def start_radicale(self):
 		"""Enable + start the Radicale CardDAV service."""
 		frappe.only_for("System Manager")
