@@ -859,7 +859,7 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 				and target_is_gal
 				and _is_gal_eligible(contact)[0]
 			):
-				frappe.delete_doc("ITSync Mapping", mapping.name, ignore_permissions=True)
+				_delete_mapping(mapping.name)
 				mapping = None  # fall through to create-path
 
 			if mapping:
@@ -935,14 +935,14 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 					continue
 				if mapping.status == "Conflict":
 					# Target was never under our control — just drop the mapping row.
-					frappe.delete_doc("ITSync Mapping", mapping.name, ignore_permissions=True)
+					_delete_mapping(mapping.name)
 					counts["skipped"] += 1
 					pending_lines.append(
 						f"[{_timestamp()}] removed conflict mapping for source_id {source_id} (source deleted)"
 					)
 				elif mapping.target_id:
 					_target_delete(target_conn, target_tenant, mapping.target_id)
-					frappe.delete_doc("ITSync Mapping", mapping.name, ignore_permissions=True)
+					_delete_mapping(mapping.name)
 					counts["deleted"] += 1
 					pending_lines.append(f"[{_timestamp()}] deleted mapping for source_id {source_id}")
 			except Exception as e:
@@ -962,7 +962,7 @@ def _run_incremental_sync(pair, source_conn, target_conn, source_client, target_
 			if mapping_row:
 				if mapping_row.status == "Conflict":
 					# Conflict mapping for a now-deleted source — just drop it.
-					frappe.delete_doc("ITSync Mapping", mapping_row["name"], ignore_permissions=True)
+					_delete_mapping(mapping_row["name"])
 				else:
 					frappe.db.set_value(
 						"ITSync Mapping", mapping_row["name"], "status", "Orphaned",
@@ -1059,6 +1059,15 @@ def _target_delete(target_conn, target_tenant, target_id):
 		delete_native_contact(target_conn, target_id)
 	else:
 		delete_contact(target_tenant, target_conn.email_address, target_id)
+
+
+def _delete_mapping(name: str):
+	"""Direct row delete. frappe.delete_doc enqueues delete_dynamic_links per
+	document and throws QueueOverloaded at >550 queued jobs AFTER the row is
+	already gone — in bulk delete runs that produced phantom errors and wrong
+	counts. Mappings are pure bookkeeping without children/attachments, so the
+	document machinery adds nothing here."""
+	frappe.db.delete("ITSync Mapping", {"name": name})
 
 
 def _find_mapping(pair_name, source_id, fields):

@@ -60,5 +60,20 @@ def update_native_contact(conn, target_id: str, data: dict) -> None:
 
 
 def delete_native_contact(conn, target_id: str) -> None:
-	if frappe.db.exists("ITSync Contact", target_id):
-		frappe.delete_doc("ITSync Contact", target_id, ignore_permissions=True, force=True)
+	# Direct row deletes instead of frappe.delete_doc: delete_doc enqueues a
+	# delete_dynamic_links job per document and throws QueueOverloaded (>550
+	# queued jobs) AFTER the row is gone — in bulk delete runs that meant
+	# phantom errors. Child rows and the book counter (normally on_trash) are
+	# handled explicitly here.
+	doc = frappe.db.get_value("ITSync Contact", target_id, ["name", "address_book"], as_dict=True)
+	if not doc:
+		return
+	meta = frappe.get_meta("ITSync Contact")
+	for df in meta.get_table_fields():
+		frappe.db.delete(df.options, {"parent": target_id, "parenttype": "ITSync Contact"})
+	frappe.db.delete("ITSync Contact", {"name": target_id})
+	if doc.address_book:
+		frappe.db.sql(
+			"UPDATE `tabITSync Address Book` SET contact_count = GREATEST(0, contact_count - 1) WHERE name = %s",
+			(doc.address_book,),
+		)
